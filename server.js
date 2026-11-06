@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
@@ -7,11 +8,18 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 
 // PostgreSQL Connection Pool
-const pool = new Pool({
-  database: 'academiasync',
-  host: 'localhost',
-  port: 5432,
-});
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    })
+  : new Pool({
+      database: process.env.PGDATABASE || 'academiasync',
+      host: process.env.PGHOST || 'localhost',
+      port: Number(process.env.PGPORT) || 5432,
+      user: process.env.PGUSER || undefined,
+      password: process.env.PGPASSWORD || undefined,
+    });
 
 app.use(cors());
 app.use(express.json());

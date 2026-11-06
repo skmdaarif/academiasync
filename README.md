@@ -1,74 +1,244 @@
-# 🎓 AcademiaSync — Modern College Timetable & Task Manager
+# 🎓 AcademiaSync
 
-A high-performance, aesthetic web application built for college students to manage daily lectures, assignment deadlines, attendance criteria, and exam preparation.
+> **Modern College Timetable, Safe-Bunk Attendance Engine & Task Management Hub**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vite.dev)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![Express](https://img.shields.io/badge/Express-5.2-000000?logo=express&logoColor=white)](https://expressjs.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13+-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+
+---
+
+## 📖 Overview
+
+**AcademiaSync** is a full-stack academic productivity suite built specifically for university and college students. It pairs real-time class schedule management with an intelligent attendance simulation engine that calculates **safe bunk capacity** and **shortage recovery**, an assignment Kanban board with subtask tracking, exam countdowns, and cross-platform calendar synchronization (`.ics` / Google Calendar / Apple Calendar / Outlook).
 
 ---
 
 ## ✨ Key Features
 
-1. **⚡ Live Lecture Ticker & Countdown**:
-   - Real-time indicator for the ongoing class with progress bar and countdown timer.
-   - "Up Next" preview showing room number, professor, and minutes until start.
-   - 1-tap "Mark Present" / "Missed / Bunk" directly from the dashboard.
+### ⚡ 1. Live Lecture Ticker & Real-Time Status
+- **Real-Time Dynamic Indicator**: Continuously computes ongoing lecture status based on system time and current day.
+- **Progress Bar & Countdown**: Visual progress bar tracking elapsed lecture minutes and countdown to period end.
+- **"Up Next" Preview**: Displays next classroom, professor, and countdown before the next session begins.
+- **1-Tap Attendance**: Log *Present* or *Missed / Bunk* directly from the hero header with instant database updates.
 
-2. **🗓️ Interactive Timetable Matrix**:
-   - **Daily Agenda View**: Step-by-step lecture cards with room, professor, and lecture type.
-   - **Weekly Matrix View**: Visual multi-column grid across the entire academic week.
-   - Add/Edit/Delete class slots with custom colors, rooms, and notes.
+### 🗓️ 2. Dual-View Timetable Matrix
+- **Daily Agenda View**: Chronological lecture timeline with room numbers, instructors, course tags, and meeting links.
+- **Weekly Matrix View**: 7-day multi-column interactive schedule with visual color-coding and overlap detection.
+- **Slot Management**: Create, edit, and categorize slots (*Lecture*, *Lab*, *Tutorial*, *Seminar*, *Club / Activity*).
 
-3. **📊 College Attendance & Safe Bunk Engine**:
-   - Real-time attendance percentage meter per course.
-   - **Safe Bunk Calculator**: Tells you exactly how many classes you can safely skip without dropping below your target percentage (e.g. 75%).
-   - **Recovery Calculator**: Shows the exact number of consecutive classes required to reach your target if you have an attendance shortage.
+### 📊 3. Attendance & "Safe Bunk" Engine
+- **Attendance Percentage Meter**: Visual circular gauge tracking current attendance against university minimums (e.g., 75%) or personal targets.
+- **Safe Bunk Calculator**: Calculates the exact number of consecutive lectures you can safely skip without dropping below your target percentage:
+  $$\text{Safe Bunks} = \left\lfloor \frac{\text{Attended} - (\text{Target} \times \text{Total})}{1 - \text{Target}} \right\rfloor$$
+- **Shortage Recovery Calculator**: If you drop below the required percentage, instantly calculates the consecutive classes you must attend to recover:
+  $$\text{Classes Needed} = \left\lceil \frac{(\text{Target} \times \text{Total}) - \text{Attended}}{1 - \text{Target}} \right\rceil$$
 
-4. **📋 Assignment & Exam Kanban Board**:
-   - Kanban columns (**To Do**, **In Progress**, **Completed**).
-   - Priority tags (🔥 Urgent, ⚠️ High, Medium, Low) and category filters.
-   - Interactive subtasks checklist with progress bars and celebration confetti!
+### 📋 4. Assignment & Exam Kanban Board
+- **Three-Column Workflow**: Drag-and-drop or status-toggle tasks across **To Do**, **In Progress**, and **Completed**.
+- **Priority & Categorization**: Mark tasks as *Urgent* 🔥, *High* ⚠️, *Medium*, or *Low*, categorized by *Assignment*, *Exam*, *Project*, *Quiz*, or *Personal*.
+- **Interactive Subtasks**: Track granular deliverables with checklists, progress percentages, and confetti celebrations upon completion.
 
-5. **⏳ Exam & Viva Countdown Hub**:
-   - Live ticking Days, Hours, Minutes, and Seconds countdowns for Midterms and Finals.
-   - Syllabus topic revision checklist.
+### ⏳ 5. Exam & Viva Countdown Hub
+- Live countdown ticker (Days, Hours, Minutes, Seconds) for Midterms, Lab Vivas, and End-Semester Finals.
+- Built-in syllabus module checklist for systematic topic-by-topic revision tracking.
 
-6. **🎨 Aesthetic Themes**:
-   - Dark Slate Pro 🌙
-   - Midnight OLED ✨
-   - Cyberpunk Neon ⚡
-   - Emerald Matrix 🌲
-   - Sunset Amber 🌅
-   - Clean Minimalist ☀️
+### 🎨 6. Six Aesthetic Built-in Themes
+Switch effortlessly between bespoke color palettes with smooth transitions:
+- 🌙 **Dark Slate Pro** (Default modern dark mode)
+- ✨ **Midnight OLED** (True-black contrast for OLED displays)
+- ⚡ **Cyberpunk Neon** (Vibrant high-contrast accents)
+- 🌲 **Emerald Forest** (Soothing deep green & mint tones)
+- 🌅 **Sunset Amber** (Warm twilight hues)
+- ☀️ **Clean Minimalist** (Crisp high-readability light theme)
 
-7. **📅 Calendar Sync & Export**:
-   - 1-Click Export to Apple Calendar / Google Calendar / Outlook (`.ics`).
-   - Export Tasks & Deadlines to `.ics`.
-   - Print-ready PDF stylesheet.
-   - Offline JSON backup and restore.
+### 📅 7. Calendar Export & Offline Portability
+- **iCalendar (`.ics`) Sync**: 1-click export of recurring weekly timetable schedules and assignment deadlines directly into Google Calendar, Apple Calendar, or Microsoft Outlook.
+- **Print / PDF Sheet**: Formats clean, print-ready schedule overviews using `jspdf` and `html2canvas`.
+- **JSON Backup & Restore**: Download encrypted offline JSON snapshots and restore state anytime.
+
+---
+
+## 🛠️ Tech Stack
+
+| Category | Technology | Description |
+| :--- | :--- | :--- |
+| **Frontend Framework** | [React 19](https://react.dev) | High-performance reactive UI with concurrency |
+| **Language** | [TypeScript 6](https://www.typescriptlang.org) | End-to-end type safety |
+| **Build Tool** | [Vite 8](https://vite.dev) | Ultra-fast HMR and bundle optimization |
+| **Styling** | [Tailwind CSS v4](https://tailwindcss.com) | Modern utility-first CSS design system |
+| **Icons** | [Lucide React](https://lucide.dev) | Comprehensive, clean icon set |
+| **Backend** | [Express 5](https://expressjs.com) | Node.js REST API with modular routing |
+| **Database** | [PostgreSQL 13+](https://www.postgresql.org) | Relational database with UUIDs and analytic views |
+| **Security** | [BcryptJS](https://www.npmjs.com/package/bcryptjs) | Password hashing with salt generation |
+| **Utilities** | `date-fns`, `canvas-confetti`, `jspdf` | Date math, celebratory UI, and document generation |
+
+---
+
+## 📁 Project Structure
+
+```
+├── server.js               # Express REST API & PostgreSQL connection pool
+├── schema.sql              # Database DDL (tables, ENUMs, indices, triggers)
+├── seed.sql                # Starter sample data for quick testing
+├── vite.config.ts          # Vite configuration with API reverse proxy
+├── tsconfig.json           # TypeScript configuration
+├── package.json            # Scripts & project dependencies
+├── .env.example            # Environment variables template
+├── public/                 # Static assets & icons
+└── src/
+    ├── App.tsx             # Master application state & auto-logout session logic
+    ├── main.tsx            # React application entrypoint
+    ├── components/
+    │   ├── AddModal.tsx            # Create/edit dialog for courses, slots, and tasks
+    │   ├── AttendanceCalculator.tsx# Attendance engine with Safe Bunk & Recovery
+    │   ├── AuthScreen.tsx          # Student sign-up & login screens
+    │   ├── EmptyState.tsx          # Informative placeholders for empty views
+    │   ├── ExamCountdownHub.tsx    # Live exam countdowns and syllabus checklist
+    │   ├── ExportModal.tsx         # iCal, PDF, and JSON data export modal
+    │   ├── Header.tsx              # Navigation bar, view selector & theme switcher
+    │   ├── LiveHero.tsx            # Current lecture ticker, countdown & quick actions
+    │   ├── SettingsModal.tsx       # Student profile & attendance criteria settings
+    │   ├── TaskManager.tsx         # Kanban assignment board with subtasks
+    │   └── TimetableGrid.tsx       # Daily Agenda and 7-day Weekly Grid views
+    ├── data/
+    │   ├── degrees.ts              # Degree presets (B.Tech, B.Sc, M.Tech, etc.)
+    │   └── universities.ts         # University listing for onboarding
+    ├── services/
+    │   ├── api.ts                  # REST API client fetch functions
+    │   ├── auth.ts                 # Authentication utilities
+    │   └── storage.ts              # JSON export & restore parsers
+    ├── styles/
+    │   └── themes.ts               # Theme definitions and color constants
+    ├── types/
+    │   └── index.ts                # TypeScript type definitions and interfaces
+    └── utils/
+        ├── calendarExport.ts       # RFC 5545 iCalendar generator & PDF exporter
+        └── timeUtils.ts            # Time calculations, periods & day helpers
+```
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Install & Run Locally
-```bash
-# Install dependencies
-npm install
+### Prerequisites
+- **Node.js**: v18.0.0 or higher
+- **npm**: v9.0.0 or higher
+- **PostgreSQL**: v13 or higher (or a cloud provider like [Supabase](https://supabase.com) or [Neon](https://neon.tech))
 
-# Start Vite dev server
-npm run dev
+---
+
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/your-username/academiasync.git
+cd academiasync
 ```
 
-### 2. Build for Production
+### Step 2: Install Dependencies
 ```bash
-npm run build
+npm install
+```
+
+### Step 3: Set Up the PostgreSQL Database
+
+#### Option A: Local PostgreSQL / Docker
+You can run a local PostgreSQL instance in Docker with one command:
+```bash
+docker run --name pg-academiasync -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=academiasync -p 5432:5432 -d postgres
+```
+
+#### Option B: Cloud Database (Supabase / Neon)
+1. Create a new PostgreSQL project on [Supabase](https://supabase.com) or [Neon](https://neon.tech).
+2. Copy the database connection URI string.
+
+#### Initialize the Schema:
+Run [`schema.sql`](./schema.sql) against your database to create all tables, types, triggers, and views:
+```bash
+# Using psql:
+psql -h localhost -U postgres -d academiasync -f schema.sql
+
+# Optional: Load initial sample data
+psql -h localhost -U postgres -d academiasync -f seed.sql
+```
+*(Alternatively, copy and paste the contents of `schema.sql` into the SQL Editor of your database dashboard).*
+
+---
+
+### Step 4: Configure Environment Variables
+Copy the sample environment file:
+```bash
+cp .env.example .env
+```
+Update `.env` with your database credentials:
+```env
+PORT=5001
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academiasync
+DATABASE_SSL=false
 ```
 
 ---
 
-## 🐘 PostgreSQL Database Integration
+### Step 5: Start the Development Server
+Run both the backend API and frontend client concurrently:
+```bash
+npm run dev
+```
 
-The project includes a production-ready PostgreSQL schema in [`schema.sql`](./schema.sql).
+- **Frontend Client**: `http://localhost:5173`
+- **Backend API**: `http://localhost:5001`
+- **Health Check**: `http://localhost:5001/api/health`
 
-### To connect to PostgreSQL (Supabase, Neon, AWS RDS, Docker):
-1. Create a new PostgreSQL database on [Supabase](https://supabase.com) or [Neon](https://neon.tech) (or run a local Docker PostgreSQL container: `docker run --name pg-campus -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres`).
-2. Open the SQL Editor in your database dashboard and paste the contents of [`schema.sql`](./schema.sql).
-3. The schema creates all tables (`users`, `courses`, `time_slots`, `tasks`, `subtasks`, `attendance_records`) and analytic views (`view_course_attendance_analytics`) with automated timestamp triggers.
+---
+
+## 📡 REST API Reference
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | PostgreSQL connection health check |
+| `POST` | `/api/auth/register` | Register a new student profile |
+| `POST` | `/api/auth/login` | Authenticate student and load credentials |
+| `GET` | `/api/data/:userId` | Fetch full student payload (courses, slots, tasks, attendance) |
+| `POST` | `/api/courses` | Add a new course/subject |
+| `PUT` | `/api/courses/:id` | Update existing course details or goals |
+| `DELETE` | `/api/courses/:id` | Delete a course and its associated slots |
+| `POST` | `/api/slots` | Add a timetable class slot |
+| `DELETE` | `/api/slots/:id` | Remove a timetable class slot |
+| `POST` | `/api/tasks` | Create a new task/assignment |
+| `PUT` | `/api/tasks/:id` | Update task status, priority, or subtasks |
+| `DELETE` | `/api/tasks/:id` | Delete a task |
+| `POST` | `/api/attendance` | Record an attendance event (`present`, `absent`, `cancelled`) |
+| `PUT` | `/api/profile/:id` | Update user profile and target criteria |
+| `POST` | `/api/reset/:id` | Wipe timetable data and reset back to clean state |
+
+---
+
+## 🔒 Security & Auto-Logout
+
+AcademiaSync includes a built-in **10-minute inactivity watchdog** in [`App.tsx`](file:///Users/skmdaarif/Desktop/Agent-projects/time-table/src/App.tsx). If no keyboard or mouse interactions are detected for 10 minutes, the session is cleared automatically from client storage to safeguard student privacy on shared campus library or lab computers.
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+1. Fork the Project.
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`).
+4. Push to the Branch (`git push origin feature/AmazingFeature`).
+5. Open a Pull Request.
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for more information.
+
+---
+
+<p align="center">
+  Crafted with ❤️ for students worldwide.
+</p>
