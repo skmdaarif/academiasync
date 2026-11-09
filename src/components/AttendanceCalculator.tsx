@@ -18,7 +18,8 @@ import {
   Trash2,
   X,
   Edit3,
-  BookOpen
+  BookOpen,
+  Calendar
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -31,6 +32,7 @@ interface AttendanceCalculatorProps {
   onMarkAttendance: (courseId: string, status: AttendanceStatus) => void;
   onUndoAttendance?: (courseId: string) => void;
   onOpenAddCourse?: () => void;
+  onOpenHistory?: () => void;
 }
 
 const PRESET_COLORS = [
@@ -54,6 +56,7 @@ export function AttendanceCalculator({
   onMarkAttendance,
   onUndoAttendance,
   onOpenAddCourse,
+  onOpenHistory,
 }: AttendanceCalculatorProps) {
   const collegeMin = user.collegeMinAttendance || user.targetAttendance || 75;
   const personalGoal = user.personalGoalAttendance || collegeMin;
@@ -120,13 +123,11 @@ export function AttendanceCalculator({
   const isCollegeSafe = overallPercentage >= collegeMin;
   const isPersonalGoalMet = overallPercentage >= personalGoal;
 
-  const handleQuickAdd = (course: Course, type: 'present' | 'absent') => {
+  const handleQuickAdd = (course: Course, type: AttendanceStatus) => {
     if (type === 'present') {
       confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
-      onMarkAttendance(course.id, 'present');
-    } else {
-      onMarkAttendance(course.id, 'absent');
     }
+    onMarkAttendance(course.id, type);
   };
 
   const handleUndo = (course: Course) => {
@@ -324,6 +325,42 @@ export function AttendanceCalculator({
         </div>
       </div>
 
+      {/* Header and History Action bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+        <div>
+          <h3 className="text-lg font-bold" style={{ color: theme.textPrimary }}>
+            Course-by-Course Attendance Breakdown
+          </h3>
+          <p className="text-xs text-slate-400">
+            Real-time safe bunk thresholds & attendance logs.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-200 bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-1.5 shadow-sm"
+              title="Open full attendance records history"
+            >
+              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+              Attendance History & Logs ({state.attendanceRecords?.length || 0})
+            </button>
+          )}
+
+          {onOpenAddCourse && (
+            <button
+              onClick={onOpenAddCourse}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white shadow-md flex items-center gap-1.5"
+              style={{ backgroundColor: theme.accent }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Course
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Course-by-Course Attendance Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {state.courses.map((course) => {
@@ -414,6 +451,15 @@ export function AttendanceCalculator({
                   >
                     <Minus className="w-3 h-3" />
                     Missed
+                  </button>
+
+                  <button
+                    onClick={() => handleQuickAdd(course, 'excused')}
+                    className="p-1.5 rounded-lg text-xs font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 hover:bg-amber-900/60 transition-colors flex items-center gap-1"
+                    title="Excused Absence / OD / Medical Leave (Does not lower percentage)"
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    OD
                   </button>
                 </div>
 

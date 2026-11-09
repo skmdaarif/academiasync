@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StudentData, UserAccount, Course } from '../types';
 import { THEMES } from '../styles/themes';
-import { X, User, BookOpen, Trash2, Check, RotateCcw, Edit3 } from 'lucide-react';
+import { X, User, BookOpen, Trash2, Check, RotateCcw, Edit3, Database } from 'lucide-react';
 
 interface SettingsModalProps {
   user: UserAccount;
@@ -12,6 +12,7 @@ interface SettingsModalProps {
   onDeleteCourse: (courseId: string) => void;
   onClearAllData: () => void;
   onDeleteAccount: () => void;
+  onSyncToPostgres?: () => void;
 }
 
 const PRESET_COLORS = [
@@ -35,6 +36,7 @@ export function SettingsModal({
   onDeleteCourse,
   onClearAllData,
   onDeleteAccount,
+  onSyncToPostgres,
 }: SettingsModalProps) {
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
@@ -275,7 +277,18 @@ export function SettingsModal({
 
           {/* Footer controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {onSyncToPostgres && (
+                <button
+                  type="button"
+                  onClick={onSyncToPostgres}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-950/30 transition-colors"
+                  title="Push and synchronize all current timetable and attendance data into PostgreSQL"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Sync to Postgres
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleClearData}

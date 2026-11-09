@@ -41,6 +41,11 @@ const pool = process.env.DATABASE_URL
       password: process.env.PGPASSWORD || undefined,
     });
 
+// Handle idle client errors gracefully without crashing process
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle PostgreSQL client:', err.message);
+});
+
 let isDbConnected = false;
 
 // Auto-run schema migration on startup if database is accessible
@@ -65,6 +70,13 @@ async function initDatabase() {
         const schemaSql = fs.readFileSync(schemaFilePath, 'utf8');
         await client.query(schemaSql);
         console.log('✅ schema.sql executed successfully! All tables and constraints ready.');
+      }
+    } else {
+      // Ensure excused status enum exists on existing databases
+      try {
+        await client.query("ALTER TYPE attendance_status_enum ADD VALUE IF NOT EXISTS 'excused';");
+      } catch {
+        // Ignore if enum type already includes it
       }
     }
     client.release();
@@ -101,6 +113,14 @@ function authenticateToken(req, res, next) {
   } else {
     next();
   }
+}
+
+// Strict Authorization Guard
+function requireAuth(req, res, next) {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ error: 'Authentication required. Please log in.' });
+  }
+  next();
 }
 
 app.use(authenticateToken);
@@ -371,9 +391,12 @@ async function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
 // ----------------------------------------------------------------------------
 
 // Fetch All Student Data
-app.get('/api/data/:userId', async (req, res) => {
+app.get('/api/data/:userId', requireAuth, async (req, res) => {
   try {
     const { userId } = req.params;
+    if (req.user.id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied to other student data.' });
+    }
     const userRes = await pool.query('SELECT theme_preference FROM users WHERE id = $1;', [userId]);
     const theme = userRes.rows[0]?.theme_preference || 'dark-slate';
     const data = await fetchFullStudentData(userId, theme);
@@ -384,7 +407,7 @@ app.get('/api/data/:userId', async (req, res) => {
 });
 
 // Add Course (with optional initial mid-semester attendance)
-app.post('/api/courses', async (req, res) => {
+app.post('/api/courses', requireAuth, async (req, res) => {
   try {
     const { 
       userId, 
@@ -399,6 +422,7 @@ app.post('/api/courses', async (req, res) => {
       attendedClasses 
     } = req.body;
 
+    const effectiveUserId = req.user.id || userId;
     const totalHeld = Math.max(0, parseInt(totalClasses, 10) || 0);
     const attended = Math.min(totalHeld, Math.max(0, parseInt(attendedClasses, 10) || 0));
 
@@ -406,7 +430,7 @@ app.post('/api/courses', async (req, res) => {
       `INSERT INTO courses (user_id, code, name, professor, default_room, color_hex, credits, attendance_goal, total_classes_held, attended_classes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, code, name, professor, default_room as "defaultRoom", color_hex as color, credits, attendance_goal as "attendanceGoal", total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [userId, code, name, professor || null, defaultRoom || null, color || '#3b82f6', credits || 3, attendanceGoal || 75, totalHeld, attended]
+      [effectiveUserId, code, name, professor || null, defaultRoom || null, color || '#3b82f6', credits || 3, attendanceGoal || 75, totalHeld, attended]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -415,7 +439,7 @@ app.post('/api/courses', async (req, res) => {
 });
 
 // Update Course
-app.put('/api/courses/:id', async (req, res) => {
+app.put('/api/courses/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { code, name, professor, defaultRoom, color, credits, attendanceGoal, totalClasses, attendedClasses } = req.body;
@@ -430,10 +454,13 @@ app.put('/api/courses/:id', async (req, res) => {
            attendance_goal = COALESCE($7, attendance_goal),
            total_classes_held = COALESCE($8, total_classes_held),
            attended_classes = COALESCE($9, attended_classes)
-       WHERE id = $10
+       WHERE id = $10 AND user_id = $11
        RETURNING id, code, name, professor, default_room as "defaultRoom", color_hex as color, credits, attendance_goal as "attendanceGoal", total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [code, name, professor, defaultRoom, color, credits, attendanceGoal, totalClasses, attendedClasses, id]
+      [code, name, professor, defaultRoom, color, credits, attendanceGoal, totalClasses, attendedClasses, id, req.user.id]
     );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Course not found or access denied.' });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -441,10 +468,10 @@ app.put('/api/courses/:id', async (req, res) => {
 });
 
 // Delete Course
-app.delete('/api/courses/:id', async (req, res) => {
+app.delete('/api/courses/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM courses WHERE id = $1;', [id]);
+    await pool.query('DELETE FROM courses WHERE id = $1 AND user_id = $2;', [id, req.user.id]);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -452,14 +479,15 @@ app.delete('/api/courses/:id', async (req, res) => {
 });
 
 // Add Time Slot
-app.post('/api/slots', async (req, res) => {
+app.post('/api/slots', requireAuth, async (req, res) => {
   try {
     const { userId, courseId, day, startTime, endTime, room, type, notes } = req.body;
+    const effectiveUserId = req.user.id || userId;
     const result = await pool.query(
       `INSERT INTO time_slots (user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, course_id as "courseId", day_of_week as day, TO_CHAR(start_time, 'HH24:MI') as "startTime", TO_CHAR(end_time, 'HH24:MI') as "endTime", room, slot_type as type, notes;`,
-      [userId, courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null]
+      [effectiveUserId, courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -468,7 +496,7 @@ app.post('/api/slots', async (req, res) => {
 });
 
 // Update Time Slot
-app.put('/api/slots/:id', async (req, res) => {
+app.put('/api/slots/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { courseId, day, startTime, endTime, room, type, notes } = req.body;
@@ -481,12 +509,12 @@ app.put('/api/slots/:id', async (req, res) => {
            room = $5,
            slot_type = COALESCE($6, slot_type),
            notes = $7
-       WHERE id = $8
+       WHERE id = $8 AND user_id = $9
        RETURNING id, course_id as "courseId", day_of_week as day, TO_CHAR(start_time, 'HH24:MI') as "startTime", TO_CHAR(end_time, 'HH24:MI') as "endTime", room, slot_type as type, notes;`,
-      [courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null, id]
+      [courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null, id, req.user.id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Time slot not found.' });
+      return res.status(404).json({ error: 'Time slot not found or access denied.' });
     }
     res.json(result.rows[0]);
   } catch (err) {
@@ -495,10 +523,10 @@ app.put('/api/slots/:id', async (req, res) => {
 });
 
 // Delete Time Slot
-app.delete('/api/slots/:id', async (req, res) => {
+app.delete('/api/slots/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM time_slots WHERE id = $1;', [id]);
+    await pool.query('DELETE FROM time_slots WHERE id = $1 AND user_id = $2;', [id, req.user.id]);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -506,17 +534,18 @@ app.delete('/api/slots/:id', async (req, res) => {
 });
 
 // Add Task (Atomic Transaction)
-app.post('/api/tasks', async (req, res) => {
+app.post('/api/tasks', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
+    const effectiveUserId = req.user.id || userId;
     await client.query('BEGIN');
     
     const taskRes = await client.query(
       `INSERT INTO tasks (user_id, course_id, title, description, due_date, due_time, priority, status, category)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, course_id as "courseId", title, description, TO_CHAR(due_date, 'YYYY-MM-DD') as "dueDate", TO_CHAR(due_time, 'HH24:MI') as "dueTime", priority, status, category, TO_CHAR(created_at, 'YYYY-MM-DD') as "createdAt";`,
-      [userId, courseId || null, title, description || null, dueDate, dueTime || '23:59:00', priority || 'medium', status || 'todo', category || 'assignment']
+      [effectiveUserId, courseId || null, title, description || null, dueDate, dueTime || '23:59:00', priority || 'medium', status || 'todo', category || 'assignment']
     );
 
     const task = taskRes.rows[0];
@@ -547,7 +576,7 @@ app.post('/api/tasks', async (req, res) => {
 });
 
 // Update Task (Atomic Transaction)
-app.put('/api/tasks/:id', async (req, res) => {
+app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
@@ -563,10 +592,15 @@ app.put('/api/tasks/:id', async (req, res) => {
            priority = COALESCE($5, priority),
            status = COALESCE($6, status),
            category = COALESCE($7, category)
-       WHERE id = $8
+       WHERE id = $8 AND user_id = $9
        RETURNING id, course_id as "courseId", title, description, TO_CHAR(due_date, 'YYYY-MM-DD') as "dueDate", TO_CHAR(due_time, 'HH24:MI') as "dueTime", priority, status, category;`,
-      [title, description, dueDate, dueTime, priority, status, category, id]
+      [title, description, dueDate, dueTime, priority, status, category, id, req.user.id]
     );
+
+    if (taskRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Task not found or access denied.' });
+    }
 
     if (Array.isArray(subtasks)) {
       await client.query('DELETE FROM subtasks WHERE task_id = $1;', [id]);
@@ -595,10 +629,10 @@ app.put('/api/tasks/:id', async (req, res) => {
 });
 
 // Delete Task
-app.delete('/api/tasks/:id', async (req, res) => {
+app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM tasks WHERE id = $1;', [id]);
+    await pool.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2;', [id, req.user.id]);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -606,10 +640,11 @@ app.delete('/api/tasks/:id', async (req, res) => {
 });
 
 // Log Attendance (Atomic Transaction)
-app.post('/api/attendance', async (req, res) => {
+app.post('/api/attendance', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { userId, courseId, status, date, note } = req.body;
+    const effectiveUserId = req.user.id || userId;
     await client.query('BEGIN');
     
     // 1. Insert record
@@ -617,24 +652,106 @@ app.post('/api/attendance', async (req, res) => {
       `INSERT INTO attendance_records (user_id, course_id, log_date, status, note)
        VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5)
        RETURNING id, course_id as "courseId", TO_CHAR(log_date, 'YYYY-MM-DD') as date, status, note;`,
-      [userId, courseId, date || null, status, note || null]
+      [effectiveUserId, courseId, date || null, status, note || null]
     );
 
-    // 2. Increment course totals
-    const attendedIncrement = status === 'present' ? 1 : 0;
-    const courseRes = await client.query(
-      `UPDATE courses
-       SET total_classes_held = total_classes_held + 1,
-           attended_classes = attended_classes + $1
-       WHERE id = $2
-       RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [attendedIncrement, courseId]
-    );
+    // 2. Adjust course totals based on attendance status:
+    // - 'present': increments held and attended
+    // - 'absent': increments held
+    // - 'excused' / 'cancelled': recorded in logs, but excuses the student without lowering percentage
+    const isPresent = status === 'present';
+    const isCounted = status === 'present' || status === 'absent';
+    const heldIncrement = isCounted ? 1 : 0;
+    const attendedIncrement = isPresent ? 1 : 0;
+
+    let courseRow;
+    if (heldIncrement > 0) {
+      const courseRes = await client.query(
+        `UPDATE courses
+         SET total_classes_held = total_classes_held + $1,
+             attended_classes = attended_classes + $2
+         WHERE id = $3 AND user_id = $4
+         RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
+        [heldIncrement, attendedIncrement, courseId, effectiveUserId]
+      );
+      courseRow = courseRes.rows[0];
+    } else {
+      const courseRes = await client.query(
+        `SELECT id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses"
+         FROM courses WHERE id = $1 AND user_id = $2;`,
+        [courseId, effectiveUserId]
+      );
+      courseRow = courseRes.rows[0];
+    }
 
     await client.query('COMMIT');
     res.status(201).json({
       record: attRes.rows[0],
-      updatedCourse: courseRes.rows[0],
+      updatedCourse: courseRow,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete Specific Attendance Record (e.g. from history view)
+app.delete('/api/attendance/:id', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    await client.query('BEGIN');
+
+    const recRes = await client.query(
+      `SELECT id, user_id, course_id, status FROM attendance_records WHERE id = $1;`,
+      [id]
+    );
+
+    if (recRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Attendance record not found.' });
+    }
+
+    const rec = recRes.rows[0];
+    if (req.user.id !== rec.user_id) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
+
+    await client.query('DELETE FROM attendance_records WHERE id = $1;', [id]);
+
+    const isPresent = rec.status === 'present';
+    const isCounted = rec.status === 'present' || rec.status === 'absent';
+    const heldDecrement = isCounted ? 1 : 0;
+    const attendedDecrement = isPresent ? 1 : 0;
+
+    let courseRow;
+    if (heldDecrement > 0) {
+      const courseRes = await client.query(
+        `UPDATE courses
+         SET total_classes_held = GREATEST(0, total_classes_held - $1),
+             attended_classes = GREATEST(0, attended_classes - $2)
+         WHERE id = $3 AND user_id = $4
+         RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
+        [heldDecrement, attendedDecrement, rec.course_id, req.user.id]
+      );
+      courseRow = courseRes.rows[0];
+    } else {
+      const courseRes = await client.query(
+        `SELECT id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses"
+         FROM courses WHERE id = $1 AND user_id = $2;`,
+        [rec.course_id, req.user.id]
+      );
+      courseRow = courseRes.rows[0];
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      deletedRecordId: id,
+      updatedCourse: courseRow,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -645,10 +762,11 @@ app.post('/api/attendance', async (req, res) => {
 });
 
 // Undo Attendance (Atomic Transaction & Accurate Reversion)
-app.post('/api/attendance/undo', async (req, res) => {
+app.post('/api/attendance/undo', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { userId, courseId } = req.body;
+    const effectiveUserId = req.user.id || userId;
     await client.query('BEGIN');
 
     // 1. Find the latest attendance record for this course
@@ -656,33 +774,38 @@ app.post('/api/attendance/undo', async (req, res) => {
       `SELECT id, status FROM attendance_records
        WHERE user_id = $1 AND course_id = $2
        ORDER BY created_at DESC LIMIT 1;`,
-      [userId, courseId]
+      [effectiveUserId, courseId]
     );
 
     let wasPresent = false;
+    let wasCounted = false;
     let deletedRecordId = null;
 
     if (latestRec.rows.length > 0) {
       const rec = latestRec.rows[0];
       wasPresent = rec.status === 'present';
+      wasCounted = rec.status === 'present' || rec.status === 'absent';
       deletedRecordId = rec.id;
       await client.query('DELETE FROM attendance_records WHERE id = $1;', [rec.id]);
     } else {
       // Fallback: If no records exist, assume class was present if attendedClasses > 0
-      const currCourse = await client.query('SELECT total_classes_held, attended_classes FROM courses WHERE id = $1;', [courseId]);
+      const currCourse = await client.query('SELECT total_classes_held, attended_classes FROM courses WHERE id = $1 AND user_id = $2;', [courseId, effectiveUserId]);
       if (currCourse.rows.length > 0 && currCourse.rows[0].attended_classes > 0) {
         wasPresent = true;
+        wasCounted = true;
       }
     }
 
     const attendedDecrement = wasPresent ? 1 : 0;
+    const heldDecrement = wasCounted ? 1 : 0;
+
     const courseRes = await client.query(
       `UPDATE courses
-       SET total_classes_held = GREATEST(0, total_classes_held - 1),
-           attended_classes = GREATEST(0, attended_classes - $1)
-       WHERE id = $2
+       SET total_classes_held = GREATEST(0, total_classes_held - $1),
+           attended_classes = GREATEST(0, attended_classes - $2)
+       WHERE id = $3 AND user_id = $4
        RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [attendedDecrement, courseId]
+      [heldDecrement, attendedDecrement, courseId, effectiveUserId]
     );
 
     await client.query('COMMIT');
@@ -699,7 +822,7 @@ app.post('/api/attendance/undo', async (req, res) => {
 });
 
 // Update User Profile (including collegeMinAttendance, personalGoalAttendance, and semesterStartDate)
-app.put('/api/users/profile', async (req, res) => {
+app.put('/api/users/profile', requireAuth, async (req, res) => {
   try {
     const {
       id,
@@ -713,6 +836,10 @@ app.put('/api/users/profile', async (req, res) => {
       personalGoalAttendance,
       theme,
     } = req.body;
+
+    if (req.user.id !== id) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
 
     const minAtt = collegeMinAttendance !== undefined ? Number(collegeMinAttendance) : null;
     let persGoal = personalGoalAttendance !== undefined ? Number(personalGoalAttendance) : null;
@@ -751,10 +878,13 @@ app.put('/api/users/profile', async (req, res) => {
 });
 
 // Clear / Wipe Student Data (Atomic Transaction)
-app.post('/api/data/wipe', async (req, res) => {
+app.post('/api/data/wipe', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { userId } = req.body;
+    if (req.user.id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
     await client.query('BEGIN');
     await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [userId]);
     await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [userId]);
@@ -772,10 +902,13 @@ app.post('/api/data/wipe', async (req, res) => {
 });
 
 // Delete Student Account & All Data (Atomic Transaction)
-app.delete('/api/users/:id', async (req, res) => {
+app.delete('/api/users/:id', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
+    if (req.user.id !== id) {
+      return res.status(403).json({ error: 'Forbidden: You can only delete your own account.' });
+    }
     await client.query('BEGIN');
     await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [id]);
     await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [id]);
@@ -794,10 +927,13 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // Restore Student Data Backup to PostgreSQL (Atomic Transaction)
-app.post('/api/data/restore', async (req, res) => {
+app.post('/api/data/restore', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     const { userId, data } = req.body;
+    if (req.user.id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
     if (!userId || !data) {
       return res.status(400).json({ error: 'User ID and backup data are required.' });
     }

@@ -391,12 +391,18 @@ export async function apiDeleteTask(taskId: string, userId: string = 'local_user
   saveLocalStudentData(userId, data);
 }
 
-export async function apiLogAttendance(userId: string, courseId: string, status: AttendanceStatus): Promise<{ record: AttendanceRecord; updatedCourse: Course }> {
+export async function apiLogAttendance(
+  userId: string, 
+  courseId: string, 
+  status: AttendanceStatus,
+  date?: string,
+  note?: string
+): Promise<{ record: AttendanceRecord; updatedCourse: Course }> {
   try {
     const res = await fetch(`${API_BASE}/attendance`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ userId, courseId, status }),
+      body: JSON.stringify({ userId, courseId, status, date, note }),
     });
     if (res.ok) return await res.json();
   } catch {
@@ -405,16 +411,18 @@ export async function apiLogAttendance(userId: string, courseId: string, status:
 
   const data = getLocalStudentData(userId);
   const course = data.courses.find((c) => c.id === courseId);
-  const nowStr = new Date().toISOString().split('T')[0];
+  const nowStr = date || new Date().toISOString().split('T')[0];
   const record: AttendanceRecord = {
     id: `att_${Date.now()}`,
     courseId,
     date: nowStr,
     status,
+    note,
   };
   data.attendanceRecords.unshift(record);
 
-  if (course) {
+  const isCounted = status === 'present' || status === 'absent';
+  if (course && isCounted) {
     course.totalClasses = (course.totalClasses || 0) + 1;
     if (status === 'present') {
       course.attendedClasses = (course.attendedClasses || 0) + 1;
@@ -429,10 +437,49 @@ export async function apiLogAttendance(userId: string, courseId: string, status:
       code: 'COURSE',
       name: 'Course',
       color: '#3b82f6',
-      totalClasses: 1,
+      totalClasses: isCounted ? 1 : 0,
       attendedClasses: status === 'present' ? 1 : 0,
     },
   };
+}
+
+export async function apiDeleteAttendanceRecord(
+  userId: string,
+  recordId: string
+): Promise<{ deletedRecordId: string; updatedCourse?: Course }> {
+  try {
+    const res = await fetch(`${API_BASE}/attendance/${recordId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  const recordIndex = data.attendanceRecords.findIndex((r) => r.id === recordId);
+  if (recordIndex === -1) {
+    return { deletedRecordId: recordId };
+  }
+
+  const rec = data.attendanceRecords[recordIndex];
+  data.attendanceRecords.splice(recordIndex, 1);
+
+  const course = data.courses.find((c) => c.id === rec.courseId);
+  if (course) {
+    const isPresent = rec.status === 'present';
+    const isCounted = rec.status === 'present' || rec.status === 'absent';
+    if (isCounted) {
+      course.totalClasses = Math.max(0, (course.totalClasses || 0) - 1);
+    }
+    if (isPresent) {
+      course.attendedClasses = Math.max(0, (course.attendedClasses || 0) - 1);
+    }
+  }
+
+  saveLocalStudentData(userId, data);
+  return { deletedRecordId: recordId, updatedCourse: course };
 }
 
 export async function apiUndoAttendance(userId: string, courseId: string): Promise<{ deletedRecordId: string | null; updatedCourse: Course }> {
@@ -451,18 +498,24 @@ export async function apiUndoAttendance(userId: string, courseId: string): Promi
   const recordIndex = data.attendanceRecords.findIndex((r) => r.courseId === courseId);
   let deletedRecordId: string | null = null;
   let wasPresent = false;
+  let wasCounted = false;
 
   if (recordIndex !== -1) {
-    deletedRecordId = data.attendanceRecords[recordIndex].id;
-    wasPresent = data.attendanceRecords[recordIndex].status === 'present';
+    const rec = data.attendanceRecords[recordIndex];
+    deletedRecordId = rec.id;
+    wasPresent = rec.status === 'present';
+    wasCounted = rec.status === 'present' || rec.status === 'absent';
     data.attendanceRecords.splice(recordIndex, 1);
   } else {
     wasPresent = true;
+    wasCounted = true;
   }
 
   const course = data.courses.find((c) => c.id === courseId);
   if (course) {
-    course.totalClasses = Math.max(0, (course.totalClasses || 0) - 1);
+    if (wasCounted) {
+      course.totalClasses = Math.max(0, (course.totalClasses || 0) - 1);
+    }
     if (wasPresent) {
       course.attendedClasses = Math.max(0, (course.attendedClasses || 0) - 1);
     }

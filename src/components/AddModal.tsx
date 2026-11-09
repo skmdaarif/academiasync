@@ -82,6 +82,14 @@ export function AddModal({
   const [pastTotalClasses, setPastTotalClasses] = useState(0);
   const [pastAttendedClasses, setPastAttendedClasses] = useState(0);
 
+  // Live schedule collision check
+  const liveSlotConflict = checkSlotOverlap(state.timeSlots, {
+    day: slotDay,
+    startTime: slotStartTime,
+    endTime: slotEndTime,
+    id: initialSlot?.id,
+  });
+
   const handleSlotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSlotError('');
@@ -319,6 +327,19 @@ export function AddModal({
                 />
               </div>
             </div>
+
+            {liveSlotConflict && (
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>
+                  <strong>Schedule Conflict:</strong> Overlaps with{' '}
+                  <span className="font-bold underline">
+                    {state.courses.find((c) => c.id === liveSlotConflict.courseId)?.code || 'another class'}
+                  </span>{' '}
+                  ({liveSlotConflict.startTime} – {liveSlotConflict.endTime}) on {slotDay}.
+                </span>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">

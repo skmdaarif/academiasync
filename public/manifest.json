@@ -1,0 +1,17 @@
+{
+  "name": "AcademiaSync - College Timetable & Academic Life Manager",
+  "short_name": "AcademiaSync",
+  "description": "Modern College Timetable, Mid-Semester Sync, Safe Bunk Attendance Engine & Task Kanban",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

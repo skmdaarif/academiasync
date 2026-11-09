@@ -75,7 +75,7 @@ export interface Task {
   createdAt?: string;
 }
 
-export type AttendanceStatus = 'present' | 'absent' | 'cancelled' | 'holiday';
+export type AttendanceStatus = 'present' | 'absent' | 'cancelled' | 'holiday' | 'excused';
 
 export interface AttendanceRecord {
   id: string;

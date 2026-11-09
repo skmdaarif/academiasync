@@ -21,9 +21,11 @@ import {
   apiDeleteTask, 
   apiLogAttendance, 
   apiUndoAttendance,
+  apiDeleteAttendanceRecord,
   apiUpdateProfile, 
   apiWipeData,
-  apiDeleteAccount 
+  apiDeleteAccount,
+  apiRestoreStudentData
 } from './services/api';
 import { THEMES } from './styles/themes';
 import { AuthScreen } from './components/AuthScreen';
@@ -32,6 +34,7 @@ import { LiveHero } from './components/LiveHero';
 import { TimetableGrid } from './components/TimetableGrid';
 import { TaskManager } from './components/TaskManager';
 import { AttendanceCalculator } from './components/AttendanceCalculator';
+import { AttendanceHistoryModal } from './components/AttendanceHistoryModal';
 import { ExamCountdownHub } from './components/ExamCountdownHub';
 import { AddModal } from './components/AddModal';
 import { ExportModal } from './components/ExportModal';
@@ -67,6 +70,7 @@ export function App() {
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAttendanceHistory, setShowAttendanceHistory] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -200,9 +204,14 @@ export function App() {
   };
 
   // Attendance Logger
-  const handleMarkAttendance = async (courseId: string, status: AttendanceStatus) => {
+  const handleMarkAttendance = async (
+    courseId: string, 
+    status: AttendanceStatus, 
+    date?: string, 
+    note?: string
+  ) => {
     try {
-      const res = await apiLogAttendance(currentUser.id, courseId, status);
+      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note);
       setState((prev) => ({
         ...prev,
         courses: prev.courses.map((c) => (c.id === courseId ? { ...c, totalClasses: res.updatedCourse.totalClasses, attendedClasses: res.updatedCourse.attendedClasses } : c)),
@@ -212,6 +221,23 @@ export function App() {
     } catch (err) {
       console.error('Error logging attendance in Postgres:', err);
       showToast('Failed to log attendance.', 'error');
+    }
+  };
+
+  const handleDeleteAttendanceRecord = async (recordId: string) => {
+    try {
+      const res = await apiDeleteAttendanceRecord(currentUser.id, recordId);
+      setState((prev) => ({
+        ...prev,
+        courses: res.updatedCourse
+          ? prev.courses.map((c) => (c.id === res.updatedCourse!.id ? { ...c, totalClasses: res.updatedCourse!.totalClasses, attendedClasses: res.updatedCourse!.attendedClasses } : c))
+          : prev.courses,
+        attendanceRecords: prev.attendanceRecords.filter((r) => r.id !== recordId),
+      }));
+      showToast('Attendance record removed.', 'info');
+    } catch (err) {
+      console.error('Error deleting attendance record:', err);
+      showToast('Failed to delete attendance record.', 'error');
     }
   };
 
@@ -414,6 +440,23 @@ export function App() {
     }
   };
 
+  // 1-Click Sync Local Data to PostgreSQL Database
+  const handleSyncToPostgres = async () => {
+    if (!currentUser) return;
+    try {
+      const res = await apiRestoreStudentData(currentUser.id, state);
+      if (res.success) {
+        const updatedUser: UserAccount = { ...currentUser, storageMode: 'postgres' };
+        setCurrentUser(updatedUser);
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
+        showToast('All timetable data & attendance records synchronized to PostgreSQL!', 'success');
+      }
+    } catch (err) {
+      console.error('Error synchronizing to PostgreSQL:', err);
+      showToast('Failed to sync to PostgreSQL. Verify Docker / PostgreSQL is online.', 'error');
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-300">
       
@@ -569,6 +612,7 @@ export function App() {
               onMarkAttendance={handleMarkAttendance}
               onUndoAttendance={handleUndoAttendance}
               onOpenAddCourse={() => setAddModalType('course')}
+              onOpenHistory={() => setShowAttendanceHistory(true)}
             />
           </div>
         )}
@@ -631,6 +675,16 @@ export function App() {
           onDeleteCourse={handleDeleteCourse}
           onClearAllData={handleClearAllData}
           onDeleteAccount={handleDeleteAccount}
+          onSyncToPostgres={handleSyncToPostgres}
+        />
+      )}
+
+      {showAttendanceHistory && (
+        <AttendanceHistoryModal
+          state={state}
+          onClose={() => setShowAttendanceHistory(false)}
+          onLogAttendance={handleMarkAttendance}
+          onDeleteRecord={handleDeleteAttendanceRecord}
         />
       )}
 
