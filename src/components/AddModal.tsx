@@ -10,15 +10,17 @@ import {
   TaskCategory 
 } from '../types';
 import { THEMES } from '../styles/themes';
-import { DAYS_ORDER } from '../utils/timeUtils';
-import { X, Plus, Calendar, CheckSquare, BookOpen, Trash2 } from 'lucide-react';
+import { DAYS_ORDER, checkSlotOverlap, parseTimeToMinutes } from '../utils/timeUtils';
+import { X, Plus, Calendar, CheckSquare, BookOpen, Trash2, AlertCircle } from 'lucide-react';
 
 interface AddModalProps {
   type: 'slot' | 'task' | 'course';
   state: StudentData;
   defaultTargetAttendance?: number;
+  initialSlot?: TimeSlot | null;
   onClose: () => void;
   onAddSlot: (slot: Omit<TimeSlot, 'id' | 'userId'>) => void;
+  onUpdateSlot?: (slot: TimeSlot) => void;
   onAddTask: (task: Omit<Task, 'id' | 'createdAt' | 'userId'>) => void;
   onAddCourse: (course: Omit<Course, 'id' | 'userId'>) => void;
 }
@@ -39,21 +41,24 @@ export function AddModal({
   type,
   state,
   defaultTargetAttendance,
+  initialSlot,
   onClose,
   onAddSlot,
+  onUpdateSlot,
   onAddTask,
   onAddCourse,
 }: AddModalProps) {
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
   // Slot Form State
-  const [slotCourseId, setSlotCourseId] = useState<string>(state.courses[0]?.id || '');
-  const [slotDay, setSlotDay] = useState<DayOfWeek>('Monday');
-  const [slotStartTime, setSlotStartTime] = useState('09:00');
-  const [slotEndTime, setSlotEndTime] = useState('10:00');
-  const [slotRoom, setSlotRoom] = useState('');
-  const [slotType, setSlotType] = useState<SlotType>('Lecture');
-  const [slotNotes, setSlotNotes] = useState('');
+  const [slotCourseId, setSlotCourseId] = useState<string>(initialSlot?.courseId || state.courses[0]?.id || '');
+  const [slotDay, setSlotDay] = useState<DayOfWeek>(initialSlot?.day || 'Monday');
+  const [slotStartTime, setSlotStartTime] = useState(initialSlot?.startTime || '09:00');
+  const [slotEndTime, setSlotEndTime] = useState(initialSlot?.endTime || '10:00');
+  const [slotRoom, setSlotRoom] = useState(initialSlot?.room || '');
+  const [slotType, setSlotType] = useState<SlotType>(initialSlot?.type || 'Lecture');
+  const [slotNotes, setSlotNotes] = useState(initialSlot?.notes || '');
+  const [slotError, setSlotError] = useState<string>('');
 
   // Task Form State
   const [taskTitle, setTaskTitle] = useState('');
@@ -79,16 +84,55 @@ export function AddModal({
 
   const handleSlotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!slotCourseId) return;
-    onAddSlot({
-      courseId: slotCourseId,
+    setSlotError('');
+    if (!slotCourseId) {
+      setSlotError('Please select a course.');
+      return;
+    }
+
+    const startM = parseTimeToMinutes(slotStartTime);
+    const endM = parseTimeToMinutes(slotEndTime);
+    if (endM <= startM) {
+      setSlotError('End time must be after start time.');
+      return;
+    }
+
+    const conflict = checkSlotOverlap(state.timeSlots, {
       day: slotDay,
       startTime: slotStartTime,
       endTime: slotEndTime,
-      room: slotRoom.trim() || undefined,
-      type: slotType,
-      notes: slotNotes.trim() || undefined,
+      id: initialSlot?.id,
     });
+
+    if (conflict) {
+      const conflictCourse = state.courses.find((c) => c.id === conflict.courseId);
+      const courseName = conflictCourse ? conflictCourse.code : 'another class';
+      setSlotError(`Schedule conflict! This slot overlaps with ${courseName} (${conflict.startTime} - ${conflict.endTime}) on ${slotDay}.`);
+      return;
+    }
+
+    if (initialSlot && onUpdateSlot) {
+      onUpdateSlot({
+        ...initialSlot,
+        courseId: slotCourseId,
+        day: slotDay,
+        startTime: slotStartTime,
+        endTime: slotEndTime,
+        room: slotRoom.trim() || undefined,
+        type: slotType,
+        notes: slotNotes.trim() || undefined,
+      });
+    } else {
+      onAddSlot({
+        courseId: slotCourseId,
+        day: slotDay,
+        startTime: slotStartTime,
+        endTime: slotEndTime,
+        room: slotRoom.trim() || undefined,
+        type: slotType,
+        notes: slotNotes.trim() || undefined,
+      });
+    }
     onClose();
   };
 
@@ -167,12 +211,12 @@ export function AddModal({
           </div>
           <div>
             <h2 className="text-xl font-bold" style={{ color: theme.textPrimary }}>
-              {type === 'slot' && 'Add Timetable Class Slot'}
+              {type === 'slot' && (initialSlot ? 'Edit Timetable Class Slot' : 'Add Timetable Class Slot')}
               {type === 'task' && 'Add Task, Assignment or Exam'}
               {type === 'course' && 'Register New College Course / Subject'}
             </h2>
             <p className="text-xs text-slate-400">
-              {type === 'slot' && 'Schedule a recurring lecture, lab, or tutorial period.'}
+              {type === 'slot' && (initialSlot ? 'Modify this lecture, lab, or tutorial period.' : 'Schedule a recurring lecture, lab, or tutorial period.')}
               {type === 'task' && 'Track deliverables, upcoming tests, or study milestones.'}
               {type === 'course' && 'Register a new subject with attendance targets and color.'}
             </p>
@@ -182,6 +226,12 @@ export function AddModal({
         {/* SLOT FORM */}
         {type === 'slot' && (
           <form onSubmit={handleSlotSubmit} className="space-y-4">
+            {slotError && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{slotError}</span>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Select Course *
@@ -310,7 +360,7 @@ export function AddModal({
                 className="px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg transition-transform hover:scale-105 disabled:opacity-50"
                 style={{ backgroundColor: theme.accent }}
               >
-                Add Class Slot
+                {initialSlot ? 'Save Slot Changes' : 'Add Class Slot'}
               </button>
             </div>
           </form>

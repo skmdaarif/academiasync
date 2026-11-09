@@ -123,74 +123,66 @@ Switch effortlessly between bespoke color palettes with smooth transitions:
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting Started (Zero Setup in 30 Seconds)
 
-### Prerequisites
-- **Node.js**: v18.0.0 or higher
-- **npm**: v9.0.0 or higher
-- **PostgreSQL**: v13 or higher (or a cloud provider like [Supabase](https://supabase.com) or [Neon](https://neon.tech))
+AcademiaSync features a **Dual-Storage Engine**. Any student can clone and run it immediately on their laptop with **zero database setup** (using browser storage), or connect it to **PostgreSQL / Docker** with auto-migrated tables.
 
 ---
 
-### Step 1: Clone the Repository
+### Option 1: ⚡ Zero-Setup Quickstart (Instant Local Run)
+
+No databases, no Docker, no environment files required:
+
 ```bash
+# 1. Clone the repository
 git clone https://github.com/your-username/academiasync.git
 cd academiasync
-```
 
-### Step 2: Install Dependencies
-```bash
+# 2. Install dependencies
 npm install
-```
 
-### Step 3: Set Up the PostgreSQL Database
-
-#### Option A: Local PostgreSQL / Docker
-You can run a local PostgreSQL instance in Docker with one command:
-```bash
-docker run --name pg-academiasync -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=academiasync -p 5432:5432 -d postgres
-```
-
-#### Option B: Cloud Database (Supabase / Neon)
-1. Create a new PostgreSQL project on [Supabase](https://supabase.com) or [Neon](https://neon.tech).
-2. Copy the database connection URI string.
-
-#### Initialize the Schema:
-Run [`schema.sql`](./schema.sql) against your database to create all tables, types, triggers, and views:
-```bash
-# Using psql:
-psql -h localhost -U postgres -d academiasync -f schema.sql
-
-# Optional: Load initial sample data
-psql -h localhost -U postgres -d academiasync -f seed.sql
-```
-*(Alternatively, copy and paste the contents of `schema.sql` into the SQL Editor of your database dashboard).*
-
----
-
-### Step 4: Configure Environment Variables
-Copy the sample environment file:
-```bash
-cp .env.example .env
-```
-Update `.env` with your database credentials:
-```env
-PORT=5001
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academiasync
-DATABASE_SSL=false
-```
-
----
-
-### Step 5: Start the Development Server
-Run both the backend API and frontend client concurrently:
-```bash
+# 3. Start the application
 npm run dev
 ```
 
-- **Frontend Client**: `http://localhost:5173`
-- **Backend API**: `http://localhost:5001`
-- **Health Check**: `http://localhost:5001/api/health`
+- Open **`http://localhost:5173`** in your browser.
+- Click **"🚀 Try Demo Schedule"** on the welcome screen to test drive a preloaded college semester, or create your student profile. Everything saves automatically!
+
+---
+
+### Option 2: 🐘 PostgreSQL / Docker Setup (Optional)
+
+If you want a dedicated relational database:
+
+#### With Docker Compose (Recommended - 1 Command):
+```bash
+docker compose up -d
+npm run dev
+```
+*(PostgreSQL starts and automatically initializes all tables from `schema.sql`).*
+
+#### With Local PostgreSQL:
+1. Create a database named `academiasync`:
+   ```bash
+   createdb academiasync
+   ```
+2. Start the dev server:
+   ```bash
+   npm run dev
+   ```
+   *(The server detects PostgreSQL and automatically runs `schema.sql` on startup!)*
+
+---
+
+### Production Build & Single-Port Server
+
+To build the client and serve everything from a single server port:
+
+```bash
+npm run build
+npm start
+```
+The application and REST API are served together at `http://localhost:5001`.
 
 ---
 

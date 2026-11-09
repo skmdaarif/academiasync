@@ -67,7 +67,8 @@ CREATE TABLE IF NOT EXISTS time_slots (
     slot_type slot_type_enum DEFAULT 'Lecture',
     meeting_link TEXT,
     notes TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_slot_time_order CHECK (end_time > start_time)
 );
 
 CREATE INDEX IF NOT EXISTS idx_time_slots_user_day ON time_slots(user_id, day_of_week);

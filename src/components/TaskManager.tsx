@@ -151,9 +151,10 @@ export function TaskManager({
   };
 
   const calculateDaysRemaining = (dueDate: string): { text: string; isOverdue: boolean } => {
-    const target = new Date(dueDate).getTime();
+    const [y, m, d] = dueDate.split('-').map(Number);
+    const target = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
     const today = new Date().setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.round((target - today) / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) return { text: `${Math.abs(diffDays)}d overdue`, isOverdue: true };
     if (diffDays === 0) return { text: 'Due Today', isOverdue: false };

@@ -358,23 +358,32 @@ export function TimetableGrid({
                   {/* Actions Right */}
                   <div className="flex items-center gap-2 pl-2 md:pl-0 border-t md:border-t-0 pt-3 md:pt-0 border-white/5">
                     {/* Quick Attendance */}
-                    <button
-                      onClick={() => onMarkAttendance(course.id, 'present')}
-                      className="p-2 rounded-xl text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/60 transition-all flex items-center gap-1"
-                      title="Log Present"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span className="hidden sm:inline">Present</span>
-                    </button>
+                    {state.attendanceRecords?.some((r) => r.courseId === course.id && r.date === new Date().toISOString().split('T')[0]) ? (
+                      <span className="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Logged Today ✓</span>
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => onMarkAttendance(course.id, 'present')}
+                          className="p-2 rounded-xl text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/60 transition-all flex items-center gap-1"
+                          title="Log Present"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span className="hidden sm:inline">Present</span>
+                        </button>
 
-                    <button
-                      onClick={() => onMarkAttendance(course.id, 'absent')}
-                      className="p-2 rounded-xl text-xs font-semibold text-rose-400 bg-rose-950/40 border border-rose-500/30 hover:bg-rose-900/60 transition-all flex items-center gap-1"
-                      title="Log Absent / Bunk"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      <span className="hidden sm:inline">Missed</span>
-                    </button>
+                        <button
+                          onClick={() => onMarkAttendance(course.id, 'absent')}
+                          className="p-2 rounded-xl text-xs font-semibold text-rose-400 bg-rose-950/40 border border-rose-500/30 hover:bg-rose-900/60 transition-all flex items-center gap-1"
+                          title="Log Absent / Bunk"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          <span className="hidden sm:inline">Missed</span>
+                        </button>
+                      </>
+                    )}
 
                     {/* Edit & Delete */}
                     <button

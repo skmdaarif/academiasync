@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { StudentData, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
 import { generateTimetableICS, generateTasksICS, downloadFile } from '../utils/calendarExport';
+import { apiRestoreStudentData } from '../services/api';
 import { 
   X, 
   Download, 
@@ -13,7 +14,8 @@ import {
   Check, 
   Printer, 
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -30,8 +32,10 @@ export function ExportModal({ user, state, onClose, onRestoreState }: ExportModa
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
+  const [isRestoring, setIsRestoring] = useState(false);
+
   const handleExportTimetableICS = () => {
-    const icsContent = generateTimetableICS(state.timeSlots, state.courses);
+    const icsContent = generateTimetableICS(state.timeSlots, state.courses, user.semesterStartDate);
     downloadFile(icsContent, `college_timetable_${user.name.toLowerCase().replace(/\s+/g, '_')}.ics`);
   };
 
@@ -52,16 +56,25 @@ export function ExportModal({ user, state, onClose, onRestoreState }: ExportModa
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
         const parsed = JSON.parse(content);
-        if (parsed.data && parsed.data.courses) {
-          onRestoreState(parsed.data);
-          onClose();
-        } else if (parsed.courses) {
-          onRestoreState(parsed);
-          onClose();
+        const dataToRestore = parsed.data && parsed.data.courses ? parsed.data : parsed.courses ? parsed : null;
+
+        if (dataToRestore) {
+          setIsRestoring(true);
+          try {
+            const res = await apiRestoreStudentData(user.id, dataToRestore);
+            onRestoreState(res.data);
+            onClose();
+          } catch (dbErr: any) {
+            // If offline, still apply to local session and warn user
+            onRestoreState(dataToRestore);
+            onClose();
+          } finally {
+            setIsRestoring(false);
+          }
         } else {
           setImportError('Invalid backup file format. Please upload a valid AcademiaSync JSON file.');
         }

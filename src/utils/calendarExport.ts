@@ -3,7 +3,7 @@ import { TimeSlot, Course, Task } from '../types';
 /**
  * Generates an iCalendar (.ics) string for recurring weekly class timetable
  */
-export function generateTimetableICS(slots: TimeSlot[], courses: Course[]): string {
+export function generateTimetableICS(slots: TimeSlot[], courses: Course[], semesterEndDate?: string): string {
   const courseMap = new Map(courses.map((c) => [c.id, c]));
 
   const dayToICalDay: Record<string, string> = {
@@ -15,6 +15,17 @@ export function generateTimetableICS(slots: TimeSlot[], courses: Course[]): stri
     Saturday: 'SA',
     Sunday: 'SU',
   };
+
+  // Compute UNTIL date for semester boundary (default: 16 weeks from today)
+  let untilDate: Date;
+  if (semesterEndDate) {
+    const [y, m, d] = semesterEndDate.split('-').map(Number);
+    untilDate = new Date(Date.UTC(y, m - 1, d, 23, 59, 59));
+  } else {
+    untilDate = new Date(Date.now() + 16 * 7 * 24 * 60 * 60 * 1000);
+  }
+  const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
+  const untilStr = `${untilDate.getUTCFullYear()}${pad(untilDate.getUTCMonth() + 1)}${pad(untilDate.getUTCDate())}T235959Z`;
 
   // Find next occurrence of a day of week starting from today
   const getNextDateForDay = (dayName: string): Date => {
@@ -41,7 +52,6 @@ export function generateTimetableICS(slots: TimeSlot[], courses: Course[]): stri
     const [hours, minutes] = timeStr.split(':').map(Number);
     const d = new Date(date);
     d.setHours(hours || 0, minutes || 0, 0, 0);
-    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
     return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
   };
 
@@ -52,7 +62,6 @@ export function generateTimetableICS(slots: TimeSlot[], courses: Course[]): stri
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'X-WR-CALNAME:College Class Timetable',
-    'X-WR-TIMEZONE:UTC',
   ];
 
   slots.forEach((slot) => {
@@ -70,10 +79,10 @@ export function generateTimetableICS(slots: TimeSlot[], courses: Course[]): stri
 
     ics.push('BEGIN:VEVENT');
     ics.push(`UID:slot-${slot.id}-${Date.now()}@academiasync.local`);
-    ics.push(`DTSTAMP:${formatICSDate(new Date(), '00:00')}Z`);
+    ics.push(`DTSTAMP:${formatICSDate(new Date(), '00:00')}`);
     ics.push(`DTSTART:${dtStart}`);
     ics.push(`DTEND:${dtEnd}`);
-    ics.push(`RRULE:FREQ=WEEKLY;BYDAY=${icalDay}`);
+    ics.push(`RRULE:FREQ=WEEKLY;BYDAY=${icalDay};UNTIL=${untilStr}`);
     ics.push(`SUMMARY:${summary}`);
     ics.push(`LOCATION:${location}`);
     ics.push(`DESCRIPTION:${description}`);

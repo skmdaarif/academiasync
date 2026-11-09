@@ -1,11 +1,31 @@
 import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Auto-copy .env.example to .env if missing for zero-config onboarding
+const envPath = path.join(__dirname, '.env');
+const envExamplePath = path.join(__dirname, '.env.example');
+if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
+  try {
+    fs.copyFileSync(envExamplePath, envPath);
+    console.log('📝 Initialized .env from .env.example for zero-config startup.');
+  } catch {
+    // Ignore copy error
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+const JWT_SECRET = process.env.JWT_SECRET || 'academiasync-secret-jwt-key-2026';
 
 // PostgreSQL Connection Pool
 const pool = process.env.DATABASE_URL
@@ -21,17 +41,84 @@ const pool = process.env.DATABASE_URL
       password: process.env.PGPASSWORD || undefined,
     });
 
+let isDbConnected = false;
+
+// Auto-run schema migration on startup if database is accessible
+async function initDatabase() {
+  try {
+    const client = await pool.connect();
+    isDbConnected = true;
+    console.log('🐘 PostgreSQL connected successfully.');
+
+    // Check if core users table exists
+    const checkTable = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'users'
+      );
+    `);
+
+    if (!checkTable.rows[0].exists) {
+      console.log('🔄 First-time setup detected: Auto-executing schema.sql...');
+      const schemaFilePath = path.join(__dirname, 'schema.sql');
+      if (fs.existsSync(schemaFilePath)) {
+        const schemaSql = fs.readFileSync(schemaFilePath, 'utf8');
+        await client.query(schemaSql);
+        console.log('✅ schema.sql executed successfully! All tables and constraints ready.');
+      }
+    }
+    client.release();
+  } catch (err) {
+    isDbConnected = false;
+    console.warn(`⚠️  PostgreSQL is not reachable (${err.message}).`);
+    console.log('💡 TIP: AcademiaSync operates seamlessly in 100% Browser Local Storage mode.');
+    console.log('💡 TIP: If you wish to use PostgreSQL, start your DB or run `docker compose up -d`.');
+  }
+}
+
+initDatabase();
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+// Auth token helper
+function generateToken(user) {
+  return jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+// Authentication Middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (token) {
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+      if (!err && decoded) {
+        req.user = decoded;
+      }
+      next();
+    });
+  } else {
+    next();
+  }
+}
+
+app.use(authenticateToken);
 
 // Health Check
 app.get('/api/health', async (req, res) => {
   try {
     const dbRes = await pool.query('SELECT current_database(), current_user, NOW() as current_time;');
-    res.json({ status: 'ok', database: dbRes.rows[0] });
+    res.json({ status: 'ok', mode: 'postgres', database: dbRes.rows[0] });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err.message });
+    res.json({ 
+      status: 'fallback', 
+      mode: 'local', 
+      message: 'PostgreSQL offline. Running in local browser storage mode.',
+      error: err.message 
+    });
   }
+});
 });
 
 // ----------------------------------------------------------------------------
@@ -56,6 +143,23 @@ app.post('/api/auth/register', async (req, res) => {
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
+    }
+
+    // Standard Password Constraints
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter (A-Z).' });
+    }
+    if (!/[a-z]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one lowercase letter (a-z).' });
+    }
+    if (!/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one number (0-9).' });
+    }
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one special character (e.g. !@#$%^&*).' });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -120,8 +224,11 @@ app.post('/api/auth/register', async (req, res) => {
       theme: userRow.theme_preference || 'dark-slate',
     };
 
+    const token = generateToken(user);
+
     res.status(201).json({
       success: true,
+      token,
       user,
       data: {
         courses: [],
@@ -184,9 +291,11 @@ app.post('/api/auth/login', async (req, res) => {
     };
 
     const data = await fetchFullStudentData(user.id, user.theme);
+    const token = generateToken(user);
 
     res.json({
       success: true,
+      token,
       user,
       data,
     });
@@ -359,6 +468,33 @@ app.post('/api/slots', async (req, res) => {
   }
 });
 
+// Update Time Slot
+app.put('/api/slots/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { courseId, day, startTime, endTime, room, type, notes } = req.body;
+    const result = await pool.query(
+      `UPDATE time_slots
+       SET course_id = COALESCE($1, course_id),
+           day_of_week = COALESCE($2, day_of_week),
+           start_time = COALESCE($3, start_time),
+           end_time = COALESCE($4, end_time),
+           room = $5,
+           slot_type = COALESCE($6, slot_type),
+           notes = $7
+       WHERE id = $8
+       RETURNING id, course_id as "courseId", day_of_week as day, TO_CHAR(start_time, 'HH24:MI') as "startTime", TO_CHAR(end_time, 'HH24:MI') as "endTime", room, slot_type as type, notes;`,
+      [courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Time slot not found.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete Time Slot
 app.delete('/api/slots/:id', async (req, res) => {
   try {
@@ -370,12 +506,14 @@ app.delete('/api/slots/:id', async (req, res) => {
   }
 });
 
-// Add Task
+// Add Task (Atomic Transaction)
 app.post('/api/tasks', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
+    await client.query('BEGIN');
     
-    const taskRes = await pool.query(
+    const taskRes = await client.query(
       `INSERT INTO tasks (user_id, course_id, title, description, due_date, due_time, priority, status, category)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, course_id as "courseId", title, description, TO_CHAR(due_date, 'YYYY-MM-DD') as "dueDate", TO_CHAR(due_time, 'HH24:MI') as "dueTime", priority, status, category, TO_CHAR(created_at, 'YYYY-MM-DD') as "createdAt";`,
@@ -388,7 +526,7 @@ app.post('/api/tasks', async (req, res) => {
     if (Array.isArray(subtasks) && subtasks.length > 0) {
       for (let i = 0; i < subtasks.length; i++) {
         const st = subtasks[i];
-        const stRes = await pool.query(
+        const stRes = await client.query(
           `INSERT INTO subtasks (task_id, title, is_completed, sort_order)
            VALUES ($1, $2, $3, $4)
            RETURNING id, title, is_completed as completed;`,
@@ -398,20 +536,26 @@ app.post('/api/tasks', async (req, res) => {
       }
     }
 
+    await client.query('COMMIT');
     task.subtasks = createdSubtasks;
     res.status(201).json(task);
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
-// Update Task
+// Update Task (Atomic Transaction)
 app.put('/api/tasks/:id', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     const { title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
+    await client.query('BEGIN');
 
-    const taskRes = await pool.query(
+    const taskRes = await client.query(
       `UPDATE tasks
        SET title = COALESCE($1, title),
            description = $2,
@@ -426,10 +570,10 @@ app.put('/api/tasks/:id', async (req, res) => {
     );
 
     if (Array.isArray(subtasks)) {
-      await pool.query('DELETE FROM subtasks WHERE task_id = $1;', [id]);
+      await client.query('DELETE FROM subtasks WHERE task_id = $1;', [id]);
       for (let i = 0; i < subtasks.length; i++) {
         const st = subtasks[i];
-        await pool.query(
+        await client.query(
           `INSERT INTO subtasks (task_id, title, is_completed, sort_order)
            VALUES ($1, $2, $3, $4);`,
           [id, st.title, st.completed || false, i]
@@ -437,13 +581,17 @@ app.put('/api/tasks/:id', async (req, res) => {
       }
     }
 
+    await client.query('COMMIT');
     const updatedTask = taskRes.rows[0];
     const currentSubtasks = await pool.query('SELECT id, title, is_completed as completed FROM subtasks WHERE task_id = $1 ORDER BY sort_order ASC;', [id]);
     updatedTask.subtasks = currentSubtasks.rows;
 
     res.json(updatedTask);
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -458,13 +606,15 @@ app.delete('/api/tasks/:id', async (req, res) => {
   }
 });
 
-// Log Attendance
+// Log Attendance (Atomic Transaction)
 app.post('/api/attendance', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { userId, courseId, status, date, note } = req.body;
+    await client.query('BEGIN');
     
     // 1. Insert record
-    const attRes = await pool.query(
+    const attRes = await client.query(
       `INSERT INTO attendance_records (user_id, course_id, log_date, status, note)
        VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5)
        RETURNING id, course_id as "courseId", TO_CHAR(log_date, 'YYYY-MM-DD') as date, status, note;`,
@@ -473,7 +623,7 @@ app.post('/api/attendance', async (req, res) => {
 
     // 2. Increment course totals
     const attendedIncrement = status === 'present' ? 1 : 0;
-    const courseRes = await pool.query(
+    const courseRes = await client.query(
       `UPDATE courses
        SET total_classes_held = total_classes_held + 1,
            attended_classes = attended_classes + $1
@@ -482,12 +632,70 @@ app.post('/api/attendance', async (req, res) => {
       [attendedIncrement, courseId]
     );
 
+    await client.query('COMMIT');
     res.status(201).json({
       record: attRes.rows[0],
       updatedCourse: courseRes.rows[0],
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Undo Attendance (Atomic Transaction & Accurate Reversion)
+app.post('/api/attendance/undo', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { userId, courseId } = req.body;
+    await client.query('BEGIN');
+
+    // 1. Find the latest attendance record for this course
+    const latestRec = await client.query(
+      `SELECT id, status FROM attendance_records
+       WHERE user_id = $1 AND course_id = $2
+       ORDER BY created_at DESC LIMIT 1;`,
+      [userId, courseId]
+    );
+
+    let wasPresent = false;
+    let deletedRecordId = null;
+
+    if (latestRec.rows.length > 0) {
+      const rec = latestRec.rows[0];
+      wasPresent = rec.status === 'present';
+      deletedRecordId = rec.id;
+      await client.query('DELETE FROM attendance_records WHERE id = $1;', [rec.id]);
+    } else {
+      // Fallback: If no records exist, assume class was present if attendedClasses > 0
+      const currCourse = await client.query('SELECT total_classes_held, attended_classes FROM courses WHERE id = $1;', [courseId]);
+      if (currCourse.rows.length > 0 && currCourse.rows[0].attended_classes > 0) {
+        wasPresent = true;
+      }
+    }
+
+    const attendedDecrement = wasPresent ? 1 : 0;
+    const courseRes = await client.query(
+      `UPDATE courses
+       SET total_classes_held = GREATEST(0, total_classes_held - 1),
+           attended_classes = GREATEST(0, attended_classes - $1)
+       WHERE id = $2
+       RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
+      [attendedDecrement, courseId]
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      deletedRecordId,
+      updatedCourse: courseRes.rows[0],
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -543,21 +751,159 @@ app.put('/api/users/profile', async (req, res) => {
   }
 });
 
-// Clear / Wipe Student Data
+// Clear / Wipe Student Data (Atomic Transaction)
 app.post('/api/data/wipe', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { userId } = req.body;
-    await pool.query('DELETE FROM attendance_records WHERE user_id = $1;', [userId]);
-    await pool.query('DELETE FROM tasks WHERE user_id = $1;', [userId]);
-    await pool.query('DELETE FROM time_slots WHERE user_id = $1;', [userId]);
-    await pool.query('DELETE FROM courses WHERE user_id = $1;', [userId]);
+    await client.query('BEGIN');
+    await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [userId]);
+    await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [userId]);
+    await client.query('DELETE FROM tasks WHERE user_id = $1;', [userId]);
+    await client.query('DELETE FROM time_slots WHERE user_id = $1;', [userId]);
+    await client.query('DELETE FROM courses WHERE user_id = $1;', [userId]);
+    await client.query('COMMIT');
     res.json({ success: true, message: 'All student data cleared successfully.' });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
+// Restore Student Data Backup to PostgreSQL (Atomic Transaction)
+app.post('/api/data/restore', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { userId, data } = req.body;
+    if (!userId || !data) {
+      return res.status(400).json({ error: 'User ID and backup data are required.' });
+    }
+
+    await client.query('BEGIN');
+
+    // 1. Clear existing data
+    await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [userId]);
+    await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [userId]);
+    await client.query('DELETE FROM tasks WHERE user_id = $1;', [userId]);
+    await client.query('DELETE FROM time_slots WHERE user_id = $1;', [userId]);
+    await client.query('DELETE FROM courses WHERE user_id = $1;', [userId]);
+
+    // 2. Insert courses & track oldId -> newId mapping if needed
+    const courseIdMap = new Map();
+    if (Array.isArray(data.courses)) {
+      for (const c of data.courses) {
+        const ins = await client.query(
+          `INSERT INTO courses (user_id, code, name, professor, default_room, color_hex, credits, attendance_goal, total_classes_held, attended_classes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id;`,
+          [
+            userId,
+            c.code,
+            c.name,
+            c.professor || null,
+            c.defaultRoom || null,
+            c.color || '#3b82f6',
+            c.credits || 3,
+            c.attendanceGoal || 75,
+            c.totalClasses || 0,
+            c.attendedClasses || 0,
+          ]
+        );
+        courseIdMap.set(c.id, ins.rows[0].id);
+      }
+    }
+
+    // 3. Insert Time Slots
+    if (Array.isArray(data.timeSlots)) {
+      for (const s of data.timeSlots) {
+        const courseId = courseIdMap.get(s.courseId) || s.courseId;
+        await client.query(
+          `INSERT INTO time_slots (user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`,
+          [
+            userId,
+            courseId,
+            s.day,
+            s.startTime,
+            s.endTime,
+            s.room || null,
+            s.type || 'Lecture',
+            s.notes || null,
+          ]
+        );
+      }
+    }
+
+    // 4. Insert Tasks & Subtasks
+    if (Array.isArray(data.tasks)) {
+      for (const t of data.tasks) {
+        const courseId = t.courseId ? (courseIdMap.get(t.courseId) || t.courseId) : null;
+        const taskRes = await client.query(
+          `INSERT INTO tasks (user_id, course_id, title, description, due_date, due_time, priority, status, category)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id;`,
+          [
+            userId,
+            courseId,
+            t.title,
+            t.description || null,
+            t.dueDate || new Date().toISOString().split('T')[0],
+            t.dueTime || '23:59:00',
+            t.priority || 'medium',
+            t.status || 'todo',
+            t.category || 'assignment',
+          ]
+        );
+
+        if (Array.isArray(t.subtasks) && t.subtasks.length > 0) {
+          for (let i = 0; i < t.subtasks.length; i++) {
+            const st = t.subtasks[i];
+            await client.query(
+              `INSERT INTO subtasks (task_id, title, is_completed, sort_order)
+               VALUES ($1, $2, $3, $4);`,
+              [taskRes.rows[0].id, st.title, st.completed || false, i]
+            );
+          }
+        }
+      }
+    }
+
+    // 5. Insert Attendance Records
+    if (Array.isArray(data.attendanceRecords)) {
+      for (const a of data.attendanceRecords) {
+        const courseId = courseIdMap.get(a.courseId) || a.courseId;
+        await client.query(
+          `INSERT INTO attendance_records (user_id, course_id, log_date, status, note)
+           VALUES ($1, $2, $3, $4, $5);`,
+          [userId, courseId, a.date || null, a.status || 'present', a.note || null]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    const fullData = await fetchFullStudentData(userId, data.theme || 'dark-slate');
+    res.json({ success: true, data: fullData });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Data Restore Error:', err);
+    res.status(500).json({ error: 'Failed to restore student backup: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Serve Vite production build if dist directory exists
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 app.listen(PORT, () => {
-  console.log(`🚀 PostgreSQL Backend Server running on http://localhost:${PORT}`);
-  console.log(`🐘 Connected directly to local PostgreSQL database 'academiasync'`);
+  console.log(`🚀 AcademiaSync Server running on http://localhost:${PORT}`);
 });

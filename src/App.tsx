@@ -14,11 +14,13 @@ import {
   apiUpdateCourse, 
   apiDeleteCourse, 
   apiAddSlot, 
+  apiUpdateSlot,
   apiDeleteSlot, 
   apiAddTask, 
   apiUpdateTask, 
   apiDeleteTask, 
   apiLogAttendance, 
+  apiUndoAttendance,
   apiUpdateProfile, 
   apiWipeData 
 } from './services/api';
@@ -64,6 +66,14 @@ export function App() {
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastMessage({ text, type });
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
 
   // Sync active user to session
   useEffect(() => {
@@ -78,9 +88,9 @@ export function App() {
     }
   }, [currentUser?.id]);
 
-  // 10-Minute Automatic Inactivity Logout
+  // 10-Minute Automatic Inactivity Logout (active on shared computers, disabled if staySignedIn is true)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || currentUser.staySignedIn) return;
 
     let timeoutId: ReturnType<typeof setTimeout>;
 
@@ -197,8 +207,27 @@ export function App() {
         courses: prev.courses.map((c) => (c.id === courseId ? { ...c, totalClasses: res.updatedCourse.totalClasses, attendedClasses: res.updatedCourse.attendedClasses } : c)),
         attendanceRecords: [res.record, ...prev.attendanceRecords],
       }));
+      showToast(`Logged attendance as ${status.toUpperCase()}`, 'success');
     } catch (err) {
       console.error('Error logging attendance in Postgres:', err);
+      showToast('Failed to log attendance.', 'error');
+    }
+  };
+
+  const handleUndoAttendance = async (courseId: string) => {
+    try {
+      const res = await apiUndoAttendance(currentUser.id, courseId);
+      setState((prev) => ({
+        ...prev,
+        courses: prev.courses.map((c) => (c.id === courseId ? { ...c, totalClasses: res.updatedCourse.totalClasses, attendedClasses: res.updatedCourse.attendedClasses } : c)),
+        attendanceRecords: res.deletedRecordId
+          ? prev.attendanceRecords.filter((r) => r.id !== res.deletedRecordId)
+          : prev.attendanceRecords,
+      }));
+      showToast('Undid latest attendance entry.', 'info');
+    } catch (err) {
+      console.error('Error undoing attendance in Postgres:', err);
+      showToast('Failed to undo attendance.', 'error');
     }
   };
 
@@ -210,18 +239,26 @@ export function App() {
         ...prev,
         timeSlots: [...prev.timeSlots, created],
       }));
+      showToast('Class slot added to schedule.', 'success');
     } catch (err) {
       console.error('Error adding slot in Postgres:', err);
+      showToast('Failed to save slot to database.', 'error');
     }
   };
 
-  const handleEditSlot = (slot: TimeSlot) => {
-    // Local optimistic update
-    setState((prev) => ({
-      ...prev,
-      timeSlots: prev.timeSlots.map((s) => (s.id === slot.id ? slot : s)),
-    }));
-    setEditingSlot(null);
+  const handleUpdateSlot = async (slot: TimeSlot) => {
+    try {
+      const updated = await apiUpdateSlot(slot);
+      setState((prev) => ({
+        ...prev,
+        timeSlots: prev.timeSlots.map((s) => (s.id === slot.id ? updated : s)),
+      }));
+      setEditingSlot(null);
+      showToast('Class slot updated successfully.', 'success');
+    } catch (err) {
+      console.error('Error updating slot in Postgres:', err);
+      showToast('Failed to update class slot.', 'error');
+    }
   };
 
   const handleDeleteSlot = async (slotId: string) => {
@@ -231,8 +268,10 @@ export function App() {
         ...prev,
         timeSlots: prev.timeSlots.filter((s) => s.id !== slotId),
       }));
+      showToast('Class slot deleted.', 'info');
     } catch (err) {
       console.error('Error deleting slot in Postgres:', err);
+      showToast('Failed to delete class slot.', 'error');
     }
   };
 
@@ -504,6 +543,7 @@ export function App() {
               onDeleteCourse={handleDeleteCourse}
               onUpdateGoals={handleUpdateGoals}
               onMarkAttendance={handleMarkAttendance}
+              onUndoAttendance={handleUndoAttendance}
               onOpenAddCourse={() => setAddModalType('course')}
             />
           </div>
@@ -531,13 +571,18 @@ export function App() {
       </main>
 
       {/* MODALS */}
-      {addModalType && (
+      {(addModalType || editingSlot) && (
         <AddModal
-          type={addModalType}
+          type={addModalType || 'slot'}
+          initialSlot={editingSlot}
           state={state}
           defaultTargetAttendance={currentUser.personalGoalAttendance || currentUser.collegeMinAttendance || 75}
-          onClose={() => setAddModalType(null)}
+          onClose={() => {
+            setAddModalType(null);
+            setEditingSlot(null);
+          }}
           onAddSlot={handleAddSlot}
+          onUpdateSlot={handleUpdateSlot}
           onAddTask={handleAddTask}
           onAddCourse={handleAddCourse}
         />
@@ -562,6 +607,19 @@ export function App() {
           onDeleteCourse={handleDeleteCourse}
           onClearAllData={handleClearAllData}
         />
+      )}
+
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-2 transition-all ${
+          toastMessage.type === 'success'
+            ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-900/30'
+            : toastMessage.type === 'error'
+            ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-900/30'
+            : 'bg-slate-900/90 text-white border-white/20'
+        }`}>
+          <span>{toastMessage.text}</span>
+        </div>
       )}
 
       {/* Footer */}

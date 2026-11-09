@@ -29,6 +29,7 @@ interface AttendanceCalculatorProps {
   onDeleteCourse?: (courseId: string) => void;
   onUpdateGoals: (collegeMin: number, personalGoal: number) => void;
   onMarkAttendance: (courseId: string, status: AttendanceStatus) => void;
+  onUndoAttendance?: (courseId: string) => void;
   onOpenAddCourse?: () => void;
 }
 
@@ -51,6 +52,7 @@ export function AttendanceCalculator({
   onDeleteCourse,
   onUpdateGoals,
   onMarkAttendance,
+  onUndoAttendance,
   onOpenAddCourse,
 }: AttendanceCalculatorProps) {
   const collegeMin = user.collegeMinAttendance || user.targetAttendance || 75;
@@ -129,13 +131,17 @@ export function AttendanceCalculator({
 
   const handleUndo = (course: Course) => {
     if (course.totalClasses <= 0) return;
-    const newAttended = Math.max(0, course.attendedClasses - 1);
-    const newTotal = Math.max(0, course.totalClasses - 1);
-    onUpdateCourse({
-      ...course,
-      totalClasses: newTotal,
-      attendedClasses: newAttended,
-    });
+    if (onUndoAttendance) {
+      onUndoAttendance(course.id);
+    } else {
+      const newAttended = Math.max(0, course.attendedClasses - 1);
+      const newTotal = Math.max(0, course.totalClasses - 1);
+      onUpdateCourse({
+        ...course,
+        totalClasses: newTotal,
+        attendedClasses: newAttended,
+      });
+    }
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {

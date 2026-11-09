@@ -70,12 +70,36 @@ export interface SignUpParams {
   targetAttendance?: number;
 }
 
+export function validatePasswordStrength(password: string): string | null {
+  if (!password || password.length < 8) {
+    return 'Password must be at least 8 characters long.';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter (A-Z).';
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter (a-z).';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must contain at least one number (0-9).';
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
+    return 'Password must contain at least one special character (e.g. !@#$%^&*).';
+  }
+  return null;
+}
+
 export function registerStudent(params: SignUpParams): { success: boolean; error?: string; user?: UserAccount } {
   const users = getRegisteredUsers();
   const normalizedEmail = params.email.trim().toLowerCase();
 
   if (!normalizedEmail || !params.password) {
     return { success: false, error: 'Email and password are required.' };
+  }
+
+  const pwdErr = validatePasswordStrength(params.password);
+  if (pwdErr) {
+    return { success: false, error: pwdErr };
   }
 
   const existing = users.find((u) => u.email.toLowerCase() === normalizedEmail);

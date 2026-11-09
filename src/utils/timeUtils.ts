@@ -155,17 +155,27 @@ export function calculateAttendance(
 
   // College Bunk Margins & Needed
   const collegeSafeBunks = isCollegeSafe ? Math.max(0, Math.floor(attended / collegeTarget - total)) : 0;
-  const classesNeededForCollege = !isCollegeSafe
-    ? Math.max(1, Math.ceil((collegeTarget * total - attended) / (1 - collegeTarget)))
-    : 0;
+  let classesNeededForCollege = 0;
+  if (!isCollegeSafe) {
+    if (collegeTarget >= 1.0) {
+      classesNeededForCollege = 999;
+    } else {
+      classesNeededForCollege = Math.max(1, Math.ceil((collegeTarget * total - attended) / (1 - collegeTarget)));
+    }
+  }
 
   // Personal Goal Bunk Margins & Needed
   const personalGoalSafeBunks = isPersonalGoalMet
     ? Math.max(0, Math.floor(attended / personalTarget - total))
     : 0;
-  const classesNeededForPersonalGoal = !isPersonalGoalMet
-    ? Math.max(1, Math.ceil((personalTarget * total - attended) / (1 - personalTarget)))
-    : 0;
+  let classesNeededForPersonalGoal = 0;
+  if (!isPersonalGoalMet) {
+    if (personalTarget >= 1.0) {
+      classesNeededForPersonalGoal = 999;
+    } else {
+      classesNeededForPersonalGoal = Math.max(1, Math.ceil((personalTarget * total - attended) / (1 - personalTarget)));
+    }
+  }
 
   let statusText = '';
   let badgeColor = '';
@@ -176,10 +186,14 @@ export function calculateAttendance(
       : `Meeting your ${effectivePersonalGoal}% goal! Attend next class`;
     badgeColor = 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30';
   } else if (isCollegeSafe) {
-    statusText = `Above College Min (${collegeMinRequirement}%), but need ${classesNeededForPersonalGoal} class${classesNeededForPersonalGoal > 1 ? 'es' : ''} to reach ${effectivePersonalGoal}% goal`;
+    statusText = classesNeededForPersonalGoal >= 999
+      ? `Above College Min (${collegeMinRequirement}%), but 100% goal is mathematically impossible once a class is missed`
+      : `Above College Min (${collegeMinRequirement}%), but need ${classesNeededForPersonalGoal} class${classesNeededForPersonalGoal > 1 ? 'es' : ''} to reach ${effectivePersonalGoal}% goal`;
     badgeColor = 'text-amber-400 bg-amber-950/40 border-amber-500/30';
   } else {
-    statusText = `College Warning! Must attend next ${classesNeededForCollege} class${classesNeededForCollege > 1 ? 'es' : ''} to hit ${collegeMinRequirement}% minimum`;
+    statusText = classesNeededForCollege >= 999
+      ? `College Warning! Cannot reach 100% minimum requirement after missing classes`
+      : `College Warning! Must attend next ${classesNeededForCollege} class${classesNeededForCollege > 1 ? 'es' : ''} to hit ${collegeMinRequirement}% minimum`;
     badgeColor = 'text-rose-400 bg-rose-950/40 border-rose-500/30';
   }
 
@@ -194,4 +208,28 @@ export function calculateAttendance(
     classesNeededForCollege,
     classesNeededForPersonalGoal,
   };
+}
+
+/**
+ * Checks if a candidate time slot conflicts with existing time slots on the same day
+ */
+export function checkSlotOverlap(
+  existingSlots: TimeSlot[],
+  candidate: { day: DayOfWeek; startTime: string; endTime: string; id?: string }
+): TimeSlot | null {
+  const candStart = parseTimeToMinutes(candidate.startTime);
+  const candEnd = parseTimeToMinutes(candidate.endTime);
+  if (candEnd <= candStart) return null;
+
+  for (const slot of existingSlots) {
+    if (candidate.id && slot.id === candidate.id) continue;
+    if (slot.day !== candidate.day) continue;
+    const slotStart = parseTimeToMinutes(slot.startTime);
+    const slotEnd = parseTimeToMinutes(slot.endTime);
+    // Overlap condition: startA < endB && startB < endA
+    if (candStart < slotEnd && slotStart < candEnd) {
+      return slot;
+    }
+  }
+  return null;
 }

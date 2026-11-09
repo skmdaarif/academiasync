@@ -18,6 +18,8 @@ export interface UserAccount {
   personalGoalAttendance: number; // e.g. 90% custom student target (>= collegeMinAttendance)
   targetAttendance?: number; // legacy alias for compatibility
   theme?: ThemeKey;
+  staySignedIn?: boolean;
+  storageMode?: 'postgres' | 'local';
   createdAt?: string;
 }
 
@@ -70,7 +72,7 @@ export interface Task {
   status: TaskStatus;
   category: TaskCategory;
   subtasks?: SubTask[];
-  createdAt: string;
+  createdAt?: string;
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'cancelled' | 'holiday';

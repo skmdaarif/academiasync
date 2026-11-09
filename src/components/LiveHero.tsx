@@ -63,6 +63,11 @@ export function LiveHero({
     onMarkAttendance(courseId, 'present');
   };
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const activeClassLoggedToday = status.currentCourse
+    ? state.attendanceRecords.find((r) => r.courseId === status.currentCourse!.id && r.date === todayStr)
+    : null;
+
   return (
     <section className="mb-8">
       {/* Welcome Banner */}
@@ -248,20 +253,33 @@ export function LiveHero({
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleQuickPresent(status.currentCourse!.id)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md transition-all hover:scale-105 active:scale-95"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Mark Present
-                </button>
-                <button
-                  onClick={() => onMarkAttendance(status.currentCourse!.id, 'absent')}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/10 hover:bg-rose-600/30 hover:text-rose-300 transition-all"
-                >
-                  <XCircle className="w-4 h-4" />
-                  Missed / Bunk
-                </button>
+                {activeClassLoggedToday ? (
+                  <span className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border ${
+                    activeClassLoggedToday.status === 'present'
+                      ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30'
+                      : 'bg-rose-950/40 text-rose-300 border-rose-500/30'
+                  }`}>
+                    <CheckCircle2 className="w-4 h-4" />
+                    Today: {activeClassLoggedToday.status === 'present' ? 'Present ✓' : 'Missed ✕'}
+                  </span>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleQuickPresent(status.currentCourse!.id)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md transition-all hover:scale-105 active:scale-95"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Mark Present
+                    </button>
+                    <button
+                      onClick={() => onMarkAttendance(status.currentCourse!.id, 'absent')}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/10 hover:bg-rose-600/30 hover:text-rose-300 transition-all"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Missed / Bunk
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

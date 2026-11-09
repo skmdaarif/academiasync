@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserAccount, StudentData } from '../types';
-import { apiLogin, apiRegister } from '../services/api';
+import { apiLogin, apiRegister, apiCheckHealth } from '../services/api';
 import { COUNTRIES_UNIVERSITIES } from '../data/universities';
 import { DEGREE_PROGRAMS, getSemestersForDegree } from '../data/degrees';
+import { getDemoStudentUser, getDemoStudentData } from '../data/demoSchedule';
 import { 
   GraduationCap, 
   Mail, 
@@ -16,7 +17,9 @@ import {
   Globe,
   Award,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles,
+  Database
 } from 'lucide-react';
 
 interface AuthScreenProps {
@@ -27,9 +30,17 @@ interface AuthScreenProps {
 export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreenProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [staySignedIn, setStaySignedIn] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showTimeoutAlert, setShowTimeoutAlert] = useState(sessionExpiredNotice || false);
+  const [serverMode, setServerMode] = useState<'postgres' | 'local'>('local');
+
+  useEffect(() => {
+    apiCheckHealth().then((h) => {
+      setServerMode(h.mode);
+    });
+  }, []);
 
   // Form State
   const [name, setName] = useState('');
@@ -84,8 +95,30 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           setLoading(false);
           return;
         }
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters long.');
+
+        // Standard Password Constraints
+        if (password.length < 8) {
+          setError('Password must be at least 8 characters long.');
+          setLoading(false);
+          return;
+        }
+        if (!/[A-Z]/.test(password)) {
+          setError('Password must contain at least one uppercase letter (A-Z).');
+          setLoading(false);
+          return;
+        }
+        if (!/[a-z]/.test(password)) {
+          setError('Password must contain at least one lowercase letter (a-z).');
+          setLoading(false);
+          return;
+        }
+        if (!/[0-9]/.test(password)) {
+          setError('Password must contain at least one number (0-9).');
+          setLoading(false);
+          return;
+        }
+        if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
+          setError('Password must contain at least one special character (e.g. !@#$%^&*).');
           setLoading(false);
           return;
         }
@@ -102,10 +135,11 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           degreeType: selectedDegreeObj.name,
           semester,
           targetAttendance,
+          staySignedIn,
         });
 
         if (res.success && res.user && res.data) {
-          onAuthenticated(res.user, res.data);
+          onAuthenticated({ ...res.user, staySignedIn }, res.data);
         } else {
           setError(res.error || 'Failed to register.');
         }
@@ -116,18 +150,24 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           return;
         }
 
-        const res = await apiLogin(email, password);
+        const res = await apiLogin(email, password, staySignedIn);
         if (res.success && res.user && res.data) {
-          onAuthenticated(res.user, res.data);
+          onAuthenticated({ ...res.user, staySignedIn }, res.data);
         } else {
           setError(res.error || 'Login failed.');
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Database connection error');
+      setError(err.message || 'Authentication error.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLoadDemo = () => {
+    const demoUser = getDemoStudentUser();
+    const demoData = getDemoStudentData();
+    onAuthenticated(demoUser, demoData);
   };
 
   return (
@@ -149,8 +189,41 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
             Academia<span className="text-indigo-400">Sync</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1 font-medium">
-            Personal College Timetable & Safe Bunk Manager • Connected to PostgreSQL
+            Smart College Timetable, Safe-Bunk Attendance Engine & Task Hub
           </p>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold mt-2.5 bg-white/5 border border-white/10 text-slate-300">
+            {serverMode === 'postgres' ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>🐘 PostgreSQL Connected</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-sky-400" />
+                <span>🟢 Zero-Setup Local Storage Mode</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 1-Click Demo Mode Banner */}
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-indigo-950/70 via-purple-950/60 to-indigo-950/70 border border-indigo-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+          <div className="text-left">
+            <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              Just testing it out?
+            </span>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Instant access with a preloaded university schedule (no sign up needed).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleLoadDemo}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-all hover:scale-105 active:scale-95 shrink-0"
+          >
+            🚀 Try Demo Schedule
+          </button>
         </div>
 
         {/* Tab Switcher: Sign In vs Sign Up */}
@@ -433,6 +506,57 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+
+            {/* Live Password Constraint Checklist during Sign Up */}
+            {isSignUp && (
+              <div className="mt-2.5 p-3 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Password Requirements
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px]">
+                  <div className={`flex items-center gap-1.5 transition-colors ${password.length >= 8 ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                    <span className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-[9px] border border-current">
+                      {password.length >= 8 ? '✓' : '•'}
+                    </span>
+                    <span>8+ Characters</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 transition-colors ${/[A-Z]/.test(password) ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                    <span className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-[9px] border border-current">
+                      {/[A-Z]/.test(password) ? '✓' : '•'}
+                    </span>
+                    <span>1 Uppercase (A-Z)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 transition-colors ${/[a-z]/.test(password) ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                    <span className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-[9px] border border-current">
+                      {/[a-z]/.test(password) ? '✓' : '•'}
+                    </span>
+                    <span>1 Lowercase (a-z)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 transition-colors ${/[0-9]/.test(password) ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                    <span className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-[9px] border border-current">
+                      {/[0-9]/.test(password) ? '✓' : '•'}
+                    </span>
+                    <span>1 Number (0-9)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 sm:col-span-2 transition-colors ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password) ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                    <span className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-[9px] border border-current">
+                      {/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password) ? '✓' : '•'}
+                    </span>
+                    <span>1 Special Symbol (!@#$%^&*)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Stay Signed In Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer pt-2 text-xs text-slate-300 hover:text-white transition-colors">
+              <input
+                type="checkbox"
+                checked={staySignedIn}
+                onChange={(e) => setStaySignedIn(e.target.checked)}
+                className="w-4 h-4 rounded bg-white/10 border-white/20 text-indigo-600 focus:ring-0"
+              />
+              <span>Remember me on this laptop (disable 10-minute timeout)</span>
+            </label>
           </div>
 
           {/* Submit Button */}
@@ -442,32 +566,32 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
             className="w-full py-3 mt-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60"
           >
             {loading ? (
-              <span>Connecting to PostgreSQL...</span>
+              <span>Authenticating...</span>
             ) : (
               <>
-                <span>{isSignUp ? 'Create My Blank Student Account' : 'Sign In to PostgreSQL Dashboard'}</span>
+                <span>{isSignUp ? 'Create My Student Account' : 'Sign In to Dashboard'}</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
         </form>
 
-        {/* PostgreSQL Database Badge */}
+        {/* Database / Persistence Badge */}
         <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            Local PostgreSQL: academiasync
+            {serverMode === 'postgres' ? 'PostgreSQL: academiasync' : 'Engine: Local Browser Storage'}
           </span>
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-            Individual Student Isolated
+            Zero Setup • Works 100% Offline
           </span>
         </div>
 
       </div>
 
       <p className="text-xs text-slate-500 mt-2 relative z-10">
-        AcademiaSync • Connected to local PostgreSQL on port 5432
+        AcademiaSync • Modern University Timetable & Academic Productivity Suite
       </p>
 
     </div>
