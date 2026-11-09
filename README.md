@@ -8,13 +8,15 @@
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vite.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Express](https://img.shields.io/badge/Express-5.2-000000?logo=express&logoColor=white)](https://expressjs.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13+-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![SQLite](https://img.shields.io/badge/SQLite-3.46+-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org)
 
 ---
 
 ## 📖 Overview
 
-**AcademiaSync** is a full-stack academic productivity suite built specifically for university and college students. It pairs real-time class schedule management with an intelligent attendance simulation engine that calculates **safe bunk capacity** and **shortage recovery**, an assignment Kanban board with subtask tracking, exam countdowns, and cross-platform calendar synchronization (`.ics` / Google Calendar / Apple Calendar / Outlook).
+**AcademiaSync** is a full-stack, local-first academic productivity suite built specifically for university and college students. It pairs real-time class schedule management with an intelligent attendance simulation engine that calculates **safe bunk capacity** and **shortage recovery**, an assignment Kanban board with subtask tracking, exam countdowns, retroactive attendance history logs, and cross-platform calendar synchronization (`.ics` / Google Calendar / Apple Calendar / Outlook).
+
+Running on a **zero-config embedded SQLite engine** (`better-sqlite3`), any student can clone and start using AcademiaSync in seconds on their personal laptop without needing Docker, database servers, or internet access.
 
 ---
 
@@ -125,18 +127,12 @@ Switch effortlessly between bespoke color palettes with smooth transitions:
 
 ## 🚀 Getting Started (Zero Setup in 30 Seconds)
 
-AcademiaSync features a **Dual-Storage Engine**. Any student can clone and run it immediately on their laptop with **zero database setup** (using browser storage), or connect it to **PostgreSQL / Docker** with auto-migrated tables.
-
----
-
-### Option 1: ⚡ Zero-Setup Quickstart (Instant Local Run)
-
-No databases, no Docker, no environment files required:
+AcademiaSync runs on an **Embedded SQLite Engine** with browser offline fallback. Any student can clone and run it immediately on their laptop with **zero database installation, zero Docker, and zero server maintenance**:
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/your-username/academiasync.git
-cd academiasync
+cd time-table
 
 # 2. Install dependencies
 npm install
@@ -146,31 +142,8 @@ npm run dev
 ```
 
 - Open **`http://localhost:5173`** in your browser.
+- The server will automatically initialize `./data/academiasync.db` with all tables, constraints, and indexes.
 - Click **"🚀 Try Demo Schedule"** on the welcome screen to test drive a preloaded college semester, or create your student profile. Everything saves automatically!
-
----
-
-### Option 2: 🐘 PostgreSQL / Docker Setup (Optional)
-
-If you want a dedicated relational database:
-
-#### With Docker Compose (Recommended - 1 Command):
-```bash
-docker compose up -d
-npm run dev
-```
-*(PostgreSQL starts and automatically initializes all tables from `schema.sql`).*
-
-#### With Local PostgreSQL:
-1. Create a database named `academiasync`:
-   ```bash
-   createdb academiasync
-   ```
-2. Start the dev server:
-   ```bash
-   npm run dev
-   ```
-   *(The server detects PostgreSQL and automatically runs `schema.sql` on startup!)*
 
 ---
 

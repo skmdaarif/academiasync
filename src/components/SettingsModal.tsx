@@ -283,10 +283,10 @@ export function SettingsModal({
                   type="button"
                   onClick={onSyncToPostgres}
                   className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-950/30 transition-colors"
-                  title="Push and synchronize all current timetable and attendance data into PostgreSQL"
+                  title="Push and synchronize all current timetable and attendance data into the local SQLite database"
                 >
                   <Database className="w-3.5 h-3.5" />
-                  Sync to Postgres
+                  Sync to SQLite DB
                 </button>
               )}
               <button

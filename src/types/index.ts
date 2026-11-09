@@ -19,7 +19,7 @@ export interface UserAccount {
   targetAttendance?: number; // legacy alias for compatibility
   theme?: ThemeKey;
   staySignedIn?: boolean;
-  storageMode?: 'postgres' | 'local';
+  storageMode?: 'sqlite' | 'local' | 'postgres';
   createdAt?: string;
 }
 

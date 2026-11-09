@@ -92,9 +92,9 @@ export function Header({
                 </span>
                 <span 
                   className="hidden md:inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-white/5 border-white/10 text-slate-300"
-                  title={user.storageMode === 'postgres' ? 'Data synchronized with PostgreSQL database' : 'Data stored safely in browser Local Storage'}
+                  title={user.storageMode !== 'local' ? 'Data stored in local SQLite database (data/academiasync.db)' : 'Data stored safely in browser Local Storage'}
                 >
-                  {user.storageMode === 'postgres' ? '🐘 PostgreSQL' : '🟢 Local Storage'}
+                  {user.storageMode !== 'local' ? '🗄️ SQLite DB' : '🟢 Local Storage'}
                 </span>
               </div>
               <p className="text-xs truncate max-w-[160px] sm:max-w-xs font-medium" style={{ color: currentTheme.textSecondary }}>

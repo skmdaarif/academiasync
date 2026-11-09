@@ -440,20 +440,20 @@ export function App() {
     }
   };
 
-  // 1-Click Sync Local Data to PostgreSQL Database
-  const handleSyncToPostgres = async () => {
+  // 1-Click Sync Local Data to SQLite Database
+  const handleSyncToSQLite = async () => {
     if (!currentUser) return;
     try {
       const res = await apiRestoreStudentData(currentUser.id, state);
       if (res.success) {
-        const updatedUser: UserAccount = { ...currentUser, storageMode: 'postgres' };
+        const updatedUser: UserAccount = { ...currentUser, storageMode: 'sqlite' };
         setCurrentUser(updatedUser);
         localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
-        showToast('All timetable data & attendance records synchronized to PostgreSQL!', 'success');
+        showToast('All timetable data & attendance records synchronized to SQLite database!', 'success');
       }
     } catch (err) {
-      console.error('Error synchronizing to PostgreSQL:', err);
-      showToast('Failed to sync to PostgreSQL. Verify Docker / PostgreSQL is online.', 'error');
+      console.error('Error synchronizing to SQLite:', err);
+      showToast('Failed to sync to SQLite database.', 'error');
     }
   };
 
@@ -675,7 +675,7 @@ export function App() {
           onDeleteCourse={handleDeleteCourse}
           onClearAllData={handleClearAllData}
           onDeleteAccount={handleDeleteAccount}
-          onSyncToPostgres={handleSyncToPostgres}
+          onSyncToPostgres={handleSyncToSQLite}
         />
       )}
 
@@ -706,7 +706,7 @@ export function App() {
         style={{ borderColor: currentTheme.cardBorder, color: currentTheme.textSecondary }}
       >
         <p className="font-medium">
-          AcademiaSync • Connected to Local PostgreSQL • Student: {currentUser.name} ({currentUser.collegeName})
+          AcademiaSync • Connected to Local SQLite Database • Student: {currentUser.name} ({currentUser.collegeName})
         </p>
       </footer>
 

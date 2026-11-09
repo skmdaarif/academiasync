@@ -1,10 +1,11 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
-import { Pool } from 'pg';
+import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -27,78 +28,125 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 const JWT_SECRET = process.env.JWT_SECRET || 'academiasync-secret-jwt-key-2026';
 
-// PostgreSQL Connection Pool
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
-    })
-  : new Pool({
-      database: process.env.PGDATABASE || 'academiasync',
-      host: process.env.PGHOST || 'localhost',
-      port: Number(process.env.PGPORT) || 5432,
-      user: process.env.PGUSER || undefined,
-      password: process.env.PGPASSWORD || undefined,
-    });
-
-// Handle idle client errors gracefully without crashing process
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle PostgreSQL client:', err.message);
-});
-
-let isDbConnected = false;
-
-// Auto-run schema migration on startup if database is accessible
-async function initDatabase() {
-  try {
-    const client = await pool.connect();
-    isDbConnected = true;
-    console.log('🐘 PostgreSQL connected successfully.');
-
-    // Check if core users table exists
-    const checkTable = await client.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name = 'users'
-      );
-    `);
-
-    if (!checkTable.rows[0].exists) {
-      console.log('🔄 First-time setup detected: Auto-executing schema.sql...');
-      const schemaFilePath = path.join(__dirname, 'schema.sql');
-      if (fs.existsSync(schemaFilePath)) {
-        const schemaSql = fs.readFileSync(schemaFilePath, 'utf8');
-        await client.query(schemaSql);
-        console.log('✅ schema.sql executed successfully! All tables and constraints ready.');
-      }
-    } else {
-      // Ensure excused status enum exists on existing databases
-      try {
-        await client.query("ALTER TYPE attendance_status_enum ADD VALUE IF NOT EXISTS 'excused';");
-      } catch {
-        // Ignore if enum type already includes it
-      }
-    }
-    client.release();
-  } catch (err) {
-    isDbConnected = false;
-    console.warn(`⚠️  PostgreSQL is not reachable (${err.message}).`);
-    console.log('💡 TIP: AcademiaSync operates seamlessly in 100% Browser Local Storage mode.');
-    console.log('💡 TIP: If you wish to use PostgreSQL, start your DB or run `docker compose up -d`.');
-  }
+// ----------------------------------------------------------------------------
+// ZERO-CONFIG EMBEDDED SQLITE DATABASE
+// ----------------------------------------------------------------------------
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'academiasync.db');
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
 }
 
-initDatabase();
+const db = new Database(dbPath);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
+console.log(`🗄️  Connected to zero-config SQLite database: ${path.relative(__dirname, dbPath)}`);
+
+// Initialize Relational Schema
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    country TEXT,
+    college_name TEXT,
+    branch TEXT,
+    degree_type TEXT,
+    semester TEXT,
+    total_semesters INTEGER DEFAULT 8,
+    semester_start_date TEXT,
+    college_min_attendance REAL DEFAULT 75.0,
+    personal_attendance_goal REAL DEFAULT 75.0,
+    target_attendance_percentage REAL DEFAULT 75.0,
+    theme_preference TEXT DEFAULT 'dark-slate',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS courses (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    professor TEXT,
+    default_room TEXT,
+    color_hex TEXT DEFAULT '#3b82f6',
+    credits INTEGER DEFAULT 3,
+    attendance_goal REAL DEFAULT 75.0,
+    total_classes_held INTEGER DEFAULT 0,
+    attended_classes INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_courses_user ON courses(user_id);
+
+  CREATE TABLE IF NOT EXISTS time_slots (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    day_of_week TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    room TEXT,
+    slot_type TEXT DEFAULT 'Lecture',
+    notes TEXT,
+    meeting_link TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_slots_user ON time_slots(user_id);
+  CREATE INDEX IF NOT EXISTS idx_slots_course ON time_slots(course_id);
+
+  CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT REFERENCES courses(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    due_date TEXT NOT NULL,
+    due_time TEXT DEFAULT '23:59',
+    priority TEXT DEFAULT 'medium',
+    status TEXT DEFAULT 'todo',
+    category TEXT DEFAULT 'assignment',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
+
+  CREATE TABLE IF NOT EXISTS subtasks (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    is_completed INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id);
+
+  CREATE TABLE IF NOT EXISTS attendance_records (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    time_slot_id TEXT REFERENCES time_slots(id) ON DELETE SET NULL,
+    log_date TEXT NOT NULL DEFAULT (date('now')),
+    status TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_attendance_user_course ON attendance_records(user_id, course_id);
+  CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_records(log_date);
+`);
+
+console.log('✅ SQLite relational schema and indexes verified.');
+
+// ----------------------------------------------------------------------------
+// MIDDLEWARES & AUTHENTICATION
+// ----------------------------------------------------------------------------
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
 
-// Auth token helper
 function generateToken(user) {
   return jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
 }
 
-// Authentication Middleware
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -115,7 +163,6 @@ function authenticateToken(req, res, next) {
   }
 }
 
-// Strict Authorization Guard
 function requireAuth(req, res, next) {
   if (!req.user || !req.user.id) {
     return res.status(401).json({ error: 'Authentication required. Please log in.' });
@@ -126,25 +173,97 @@ function requireAuth(req, res, next) {
 app.use(authenticateToken);
 
 // Health Check
-app.get('/api/health', async (req, res) => {
+app.get('/api/health', (req, res) => {
   try {
-    const dbRes = await pool.query('SELECT current_database(), current_user, NOW() as current_time;');
-    res.json({ status: 'ok', mode: 'postgres', database: dbRes.rows[0] });
+    const row = db.prepare("SELECT datetime('now') as current_time").get();
+    res.json({
+      status: 'ok',
+      mode: 'sqlite',
+      database: path.basename(dbPath),
+      currentTime: row.current_time,
+    });
   } catch (err) {
-    res.json({ 
-      status: 'fallback', 
-      mode: 'local', 
-      message: 'PostgreSQL offline. Running in local browser storage mode.',
-      error: err.message 
+    res.json({
+      status: 'fallback',
+      mode: 'local',
+      message: 'Running in local browser fallback storage mode.',
+      error: err.message,
     });
   }
 });
+
+// Helper: Query all relational tables for a student
+function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
+  const courses = db.prepare(`
+    SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
+           credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
+           attended_classes as attendedClasses
+    FROM courses
+    WHERE user_id = ?
+    ORDER BY created_at ASC
+  `).all(userId);
+
+  const timeSlots = db.prepare(`
+    SELECT id, course_id as courseId, day_of_week as day,
+           start_time as startTime, end_time as endTime, room,
+           slot_type as type, notes, meeting_link as meetingLink
+    FROM time_slots
+    WHERE user_id = ?
+    ORDER BY start_time ASC
+  `).all(userId);
+
+  const tasksRaw = db.prepare(`
+    SELECT id, course_id as courseId, title, description,
+           due_date as dueDate, due_time as dueTime, priority, status,
+           category, created_at as createdAt
+    FROM tasks
+    WHERE user_id = ?
+    ORDER BY due_date ASC
+  `).all(userId);
+
+  const subtasksRaw = db.prepare(`
+    SELECT st.id, st.task_id as taskId, st.title, (st.is_completed = 1) as completed
+    FROM subtasks st
+    JOIN tasks t ON st.task_id = t.id
+    WHERE t.user_id = ?
+    ORDER BY st.sort_order ASC
+  `).all(userId);
+
+  const subtasksMap = new Map();
+  subtasksRaw.forEach((st) => {
+    if (!subtasksMap.has(st.taskId)) {
+      subtasksMap.set(st.taskId, []);
+    }
+    subtasksMap.get(st.taskId).push({ id: st.id, title: st.title, completed: Boolean(st.completed) });
+  });
+
+  const tasks = tasksRaw.map((t) => ({
+    ...t,
+    subtasks: subtasksMap.get(t.id) || [],
+  }));
+
+  const attendanceRecords = db.prepare(`
+    SELECT id, course_id as courseId, log_date as date, status, note, time_slot_id as slotId
+    FROM attendance_records
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+  `).all(userId);
+
+  return {
+    courses,
+    timeSlots,
+    tasks,
+    attendanceRecords,
+    theme: defaultTheme,
+    activeView: 'dashboard',
+  };
+}
 
 // ----------------------------------------------------------------------------
 // AUTHENTICATION ROUTES
 // ----------------------------------------------------------------------------
 
-// 1. Student Sign Up (Register)
+// 1. Register Student
 app.post('/api/auth/register', async (req, res) => {
   try {
     const {
@@ -164,7 +283,7 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
     }
 
-    // Standard Password Constraints
+    // Password Complexity Rules
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
     }
@@ -178,73 +297,65 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must contain at least one number (0-9).' });
     }
     if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
-      return res.status(400).json({ error: 'Password must contain at least one special character (e.g. !@#$%^&*).' });
+      return res.status(400).json({ error: 'Password must contain at least one special character (!@#$%^&*).' });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-
-    // Check if user already exists
-    const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1;', [normalizedEmail]);
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' });
+    const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(normalizedEmail);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists. Please log in.' });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Calculate total semesters based on degree
-    let totalSems = 8;
-    if (degreeType && degreeType.includes('6 Semesters')) totalSems = 6;
-    else if (degreeType && degreeType.includes('4 Semesters')) totalSems = 4;
-    else if (degreeType && degreeType.includes('10 Semesters')) totalSems = 10;
-    else if (degreeType && degreeType.includes('9 Semesters')) totalSems = 9;
+    const minAtt = Number(collegeMinAttendance) || 75;
+    let persGoal = Number(personalGoalAttendance) || minAtt;
+    if (persGoal < minAtt) persGoal = minAtt;
 
-    const minAtt = Number(collegeMinAttendance) || 75.0;
-    const persGoal = Math.max(minAtt, Number(personalGoalAttendance) || Math.max(85.0, minAtt));
+    const userId = crypto.randomUUID();
 
-    const result = await pool.query(
-      `INSERT INTO users (
-        full_name, email, password_hash, country, college_name, branch, degree_type, semester, total_semesters, college_min_attendance, personal_attendance_goal, target_attendance_percentage
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING id, full_name, email, country, college_name, branch, degree_type, semester, total_semesters, college_min_attendance, personal_attendance_goal, theme_preference;`,
-      [
-        name.trim(),
-        normalizedEmail,
-        passwordHash,
-        country || 'India',
-        collegeName || 'University',
-        branch || 'Computer Science',
-        degreeType || 'B.Tech / B.E. (4 Years - 8 Semesters)',
-        semester || 'Semester 1',
-        totalSems,
-        minAtt,
-        persGoal,
-        minAtt,
-      ]
+    db.prepare(`
+      INSERT INTO users (
+        id, full_name, email, password_hash, country, college_name,
+        branch, degree_type, semester, total_semesters,
+        college_min_attendance, personal_attendance_goal, target_attendance_percentage,
+        theme_preference
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      name.trim(),
+      normalizedEmail,
+      passwordHash,
+      country || 'India',
+      collegeName || 'National Institute of Technology',
+      branch || 'Computer Science & Engineering',
+      degreeType || 'B.Tech / B.E.',
+      semester || 'Semester 5',
+      8,
+      minAtt,
+      persGoal,
+      minAtt,
+      'dark-slate'
     );
 
-    const userRow = result.rows[0];
-    const collegeMin = Number(userRow.college_min_attendance || 75);
-    const personalGoal = Number(userRow.personal_attendance_goal || collegeMin);
     const user = {
-      id: userRow.id,
-      name: userRow.full_name,
-      email: userRow.email,
-      country: userRow.country,
-      collegeName: userRow.college_name,
-      branch: userRow.branch,
-      degreeType: userRow.degree_type,
-      semester: userRow.semester,
-      totalSemesters: userRow.total_semesters,
-      collegeMinAttendance: collegeMin,
-      personalGoalAttendance: personalGoal,
-      targetAttendance: collegeMin,
-      theme: userRow.theme_preference || 'dark-slate',
+      id: userId,
+      name: name.trim(),
+      email: normalizedEmail,
+      country: country || 'India',
+      collegeName: collegeName || 'National Institute of Technology',
+      branch: branch || 'Computer Science & Engineering',
+      degreeType: degreeType || 'B.Tech / B.E.',
+      semester: semester || 'Semester 5',
+      totalSemesters: 8,
+      collegeMinAttendance: minAtt,
+      personalGoalAttendance: persGoal,
+      targetAttendance: minAtt,
+      theme: 'dark-slate',
     };
 
     const token = generateToken(user);
-
     res.status(201).json({
       success: true,
       token,
@@ -264,7 +375,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// 2. Student Sign In (Login)
+// 2. Login Student
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -273,17 +384,18 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const userQuery = await pool.query(
-      `SELECT id, full_name, email, password_hash, country, college_name, branch, degree_type, semester, total_semesters, college_min_attendance, personal_attendance_goal, target_attendance_percentage, theme_preference, TO_CHAR(semester_start_date, 'YYYY-MM-DD') as semester_start_date
-       FROM users WHERE LOWER(email) = $1;`,
-      [normalizedEmail]
-    );
+    const userRow = db.prepare(`
+      SELECT id, full_name, email, password_hash, country, college_name,
+             branch, degree_type, semester, total_semesters,
+             college_min_attendance, personal_attendance_goal, target_attendance_percentage,
+             theme_preference, semester_start_date
+      FROM users WHERE LOWER(email) = ?
+    `).get(normalizedEmail);
 
-    if (userQuery.rows.length === 0) {
+    if (!userRow) {
       return res.status(404).json({ error: 'No account found with this email. Please sign up.' });
     }
 
-    const userRow = userQuery.rows[0];
     const match = await bcrypt.compare(password, userRow.password_hash);
     if (!match) {
       return res.status(401).json({ error: 'Incorrect password. Please try again.' });
@@ -309,7 +421,7 @@ app.post('/api/auth/login', async (req, res) => {
       theme: userRow.theme_preference || 'dark-slate',
     };
 
-    const data = await fetchFullStudentData(user.id, user.theme);
+    const data = fetchFullStudentData(user.id, user.theme);
     const token = generateToken(user);
 
     res.json({
@@ -324,154 +436,134 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Helper function to query all tables for a student
-async function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
-  // 1. Courses
-  const coursesRes = await pool.query(
-    `SELECT id, code, name, professor, default_room as "defaultRoom", color_hex as color, credits, attendance_goal as "attendanceGoal", total_classes_held as "totalClasses", attended_classes as "attendedClasses"
-     FROM courses WHERE user_id = $1 ORDER BY created_at ASC;`,
-    [userId]
-  );
-
-  // 2. Time Slots
-  const slotsRes = await pool.query(
-    `SELECT id, course_id as "courseId", day_of_week as day, TO_CHAR(start_time, 'HH24:MI') as "startTime", TO_CHAR(end_time, 'HH24:MI') as "endTime", room, slot_type as type, notes, meeting_link as "meetingLink"
-     FROM time_slots WHERE user_id = $1 ORDER BY start_time ASC;`,
-    [userId]
-  );
-
-  // 3. Tasks & Subtasks
-  const tasksRes = await pool.query(
-    `SELECT id, course_id as "courseId", title, description, TO_CHAR(due_date, 'YYYY-MM-DD') as "dueDate", TO_CHAR(due_time, 'HH24:MI') as "dueTime", priority, status, category, TO_CHAR(created_at, 'YYYY-MM-DD') as "createdAt"
-     FROM tasks WHERE user_id = $1 ORDER BY due_date ASC;`,
-    [userId]
-  );
-
-  const subtasksRes = await pool.query(
-    `SELECT st.id, st.task_id as "taskId", st.title, st.is_completed as completed
-     FROM subtasks st
-     JOIN tasks t ON st.task_id = t.id
-     WHERE t.user_id = $1
-     ORDER BY st.sort_order ASC;`,
-    [userId]
-  );
-
-  const subtasksMap = new Map();
-  subtasksRes.rows.forEach((st) => {
-    if (!subtasksMap.has(st.taskId)) {
-      subtasksMap.set(st.taskId, []);
-    }
-    subtasksMap.get(st.taskId).push({ id: st.id, title: st.title, completed: st.completed });
-  });
-
-  const tasks = tasksRes.rows.map((t) => ({
-    ...t,
-    subtasks: subtasksMap.get(t.id) || [],
-  }));
-
-  // 4. Attendance Records
-  const attendanceRes = await pool.query(
-    `SELECT id, course_id as "courseId", TO_CHAR(log_date, 'YYYY-MM-DD') as date, status, note, time_slot_id as "slotId"
-     FROM attendance_records WHERE user_id = $1 ORDER BY created_at DESC;`,
-    [userId]
-  );
-
-  return {
-    courses: coursesRes.rows,
-    timeSlots: slotsRes.rows,
-    tasks,
-    attendanceRecords: attendanceRes.rows,
-    theme: defaultTheme,
-    activeView: 'dashboard',
-  };
-}
-
 // ----------------------------------------------------------------------------
-// DATA CRUD ROUTES (Direct Postgres Operations)
+// DATA CRUD OPERATIONS (Direct SQLite)
 // ----------------------------------------------------------------------------
 
 // Fetch All Student Data
-app.get('/api/data/:userId', requireAuth, async (req, res) => {
+app.get('/api/data/:userId', requireAuth, (req, res) => {
   try {
     const { userId } = req.params;
     if (req.user.id !== userId) {
       return res.status(403).json({ error: 'Forbidden: Access denied to other student data.' });
     }
-    const userRes = await pool.query('SELECT theme_preference FROM users WHERE id = $1;', [userId]);
-    const theme = userRes.rows[0]?.theme_preference || 'dark-slate';
-    const data = await fetchFullStudentData(userId, theme);
+    const userRow = db.prepare('SELECT theme_preference FROM users WHERE id = ?').get(userId);
+    const theme = userRow?.theme_preference || 'dark-slate';
+    const data = fetchFullStudentData(userId, theme);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Add Course (with optional initial mid-semester attendance)
-app.post('/api/courses', requireAuth, async (req, res) => {
+// Add Course
+app.post('/api/courses', requireAuth, (req, res) => {
   try {
-    const { 
-      userId, 
-      code, 
-      name, 
-      professor, 
-      defaultRoom, 
-      color, 
-      credits, 
+    const {
+      userId,
+      code,
+      name,
+      professor,
+      defaultRoom,
+      color,
+      credits,
       attendanceGoal,
       totalClasses,
-      attendedClasses 
+      attendedClasses,
     } = req.body;
 
     const effectiveUserId = req.user.id || userId;
     const totalHeld = Math.max(0, parseInt(totalClasses, 10) || 0);
     const attended = Math.min(totalHeld, Math.max(0, parseInt(attendedClasses, 10) || 0));
+    const courseId = crypto.randomUUID();
 
-    const result = await pool.query(
-      `INSERT INTO courses (user_id, code, name, professor, default_room, color_hex, credits, attendance_goal, total_classes_held, attended_classes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, code, name, professor, default_room as "defaultRoom", color_hex as color, credits, attendance_goal as "attendanceGoal", total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [effectiveUserId, code, name, professor || null, defaultRoom || null, color || '#3b82f6', credits || 3, attendanceGoal || 75, totalHeld, attended]
+    db.prepare(`
+      INSERT INTO courses (
+        id, user_id, code, name, professor, default_room, color_hex,
+        credits, attendance_goal, total_classes_held, attended_classes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      courseId,
+      effectiveUserId,
+      code.trim(),
+      name.trim(),
+      professor || null,
+      defaultRoom || null,
+      color || '#3b82f6',
+      credits || 3,
+      attendanceGoal || 75,
+      totalHeld,
+      attended
     );
-    res.status(201).json(result.rows[0]);
+
+    const created = db.prepare(`
+      SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
+             credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
+             attended_classes as attendedClasses
+      FROM courses WHERE id = ?
+    `).get(courseId);
+
+    res.status(201).json(created);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Update Course
-app.put('/api/courses/:id', requireAuth, async (req, res) => {
+app.put('/api/courses/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     const { code, name, professor, defaultRoom, color, credits, attendanceGoal, totalClasses, attendedClasses } = req.body;
-    const result = await pool.query(
-      `UPDATE courses 
-       SET code = COALESCE($1, code),
-           name = COALESCE($2, name),
-           professor = $3,
-           default_room = $4,
-           color_hex = COALESCE($5, color_hex),
-           credits = COALESCE($6, credits),
-           attendance_goal = COALESCE($7, attendance_goal),
-           total_classes_held = COALESCE($8, total_classes_held),
-           attended_classes = COALESCE($9, attended_classes)
-       WHERE id = $10 AND user_id = $11
-       RETURNING id, code, name, professor, default_room as "defaultRoom", color_hex as color, credits, attendance_goal as "attendanceGoal", total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [code, name, professor, defaultRoom, color, credits, attendanceGoal, totalClasses, attendedClasses, id, req.user.id]
-    );
-    if (result.rows.length === 0) {
+
+    const existing = db.prepare('SELECT * FROM courses WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!existing) {
       return res.status(404).json({ error: 'Course not found or access denied.' });
     }
-    res.json(result.rows[0]);
+
+    db.prepare(`
+      UPDATE courses
+      SET code = COALESCE(?, code),
+          name = COALESCE(?, name),
+          professor = ?,
+          default_room = ?,
+          color_hex = COALESCE(?, color_hex),
+          credits = COALESCE(?, credits),
+          attendance_goal = COALESCE(?, attendance_goal),
+          total_classes_held = COALESCE(?, total_classes_held),
+          attended_classes = COALESCE(?, attended_classes)
+      WHERE id = ? AND user_id = ?
+    `).run(
+      code || null,
+      name || null,
+      professor !== undefined ? professor : existing.professor,
+      defaultRoom !== undefined ? defaultRoom : existing.default_room,
+      color || null,
+      credits !== undefined ? credits : null,
+      attendanceGoal !== undefined ? attendanceGoal : null,
+      totalClasses !== undefined ? totalClasses : null,
+      attendedClasses !== undefined ? attendedClasses : null,
+      id,
+      req.user.id
+    );
+
+    const updated = db.prepare(`
+      SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
+             credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
+             attended_classes as attendedClasses
+      FROM courses WHERE id = ?
+    `).get(id);
+
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Delete Course
-app.delete('/api/courses/:id', requireAuth, async (req, res) => {
+app.delete('/api/courses/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM courses WHERE id = $1 AND user_id = $2;', [id, req.user.id]);
+    db.prepare('DELETE FROM courses WHERE id = ? AND user_id = ?').run(id, req.user.id);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -479,54 +571,92 @@ app.delete('/api/courses/:id', requireAuth, async (req, res) => {
 });
 
 // Add Time Slot
-app.post('/api/slots', requireAuth, async (req, res) => {
+app.post('/api/slots', requireAuth, (req, res) => {
   try {
     const { userId, courseId, day, startTime, endTime, room, type, notes } = req.body;
     const effectiveUserId = req.user.id || userId;
-    const result = await pool.query(
-      `INSERT INTO time_slots (user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, course_id as "courseId", day_of_week as day, TO_CHAR(start_time, 'HH24:MI') as "startTime", TO_CHAR(end_time, 'HH24:MI') as "endTime", room, slot_type as type, notes;`,
-      [effectiveUserId, courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null]
+    const slotId = crypto.randomUUID();
+
+    db.prepare(`
+      INSERT INTO time_slots (
+        id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      slotId,
+      effectiveUserId,
+      courseId,
+      day,
+      startTime,
+      endTime,
+      room || null,
+      type || 'Lecture',
+      notes || null
     );
-    res.status(201).json(result.rows[0]);
+
+    const created = db.prepare(`
+      SELECT id, course_id as courseId, day_of_week as day,
+             start_time as startTime, end_time as endTime, room,
+             slot_type as type, notes
+      FROM time_slots WHERE id = ?
+    `).get(slotId);
+
+    res.status(201).json(created);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Update Time Slot
-app.put('/api/slots/:id', requireAuth, async (req, res) => {
+app.put('/api/slots/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     const { courseId, day, startTime, endTime, room, type, notes } = req.body;
-    const result = await pool.query(
-      `UPDATE time_slots
-       SET course_id = COALESCE($1, course_id),
-           day_of_week = COALESCE($2, day_of_week),
-           start_time = COALESCE($3, start_time),
-           end_time = COALESCE($4, end_time),
-           room = $5,
-           slot_type = COALESCE($6, slot_type),
-           notes = $7
-       WHERE id = $8 AND user_id = $9
-       RETURNING id, course_id as "courseId", day_of_week as day, TO_CHAR(start_time, 'HH24:MI') as "startTime", TO_CHAR(end_time, 'HH24:MI') as "endTime", room, slot_type as type, notes;`,
-      [courseId, day, startTime, endTime, room || null, type || 'Lecture', notes || null, id, req.user.id]
-    );
-    if (result.rows.length === 0) {
+
+    const existing = db.prepare('SELECT * FROM time_slots WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!existing) {
       return res.status(404).json({ error: 'Time slot not found or access denied.' });
     }
-    res.json(result.rows[0]);
+
+    db.prepare(`
+      UPDATE time_slots
+      SET course_id = COALESCE(?, course_id),
+          day_of_week = COALESCE(?, day_of_week),
+          start_time = COALESCE(?, start_time),
+          end_time = COALESCE(?, end_time),
+          room = ?,
+          slot_type = COALESCE(?, slot_type),
+          notes = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      courseId || null,
+      day || null,
+      startTime || null,
+      endTime || null,
+      room !== undefined ? room : existing.room,
+      type || null,
+      notes !== undefined ? notes : existing.notes,
+      id,
+      req.user.id
+    );
+
+    const updated = db.prepare(`
+      SELECT id, course_id as courseId, day_of_week as day,
+             start_time as startTime, end_time as endTime, room,
+             slot_type as type, notes
+      FROM time_slots WHERE id = ?
+    `).get(id);
+
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Delete Time Slot
-app.delete('/api/slots/:id', requireAuth, async (req, res) => {
+app.delete('/api/slots/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM time_slots WHERE id = $1 AND user_id = $2;', [id, req.user.id]);
+    db.prepare('DELETE FROM time_slots WHERE id = ? AND user_id = ?').run(id, req.user.id);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -534,105 +664,138 @@ app.delete('/api/slots/:id', requireAuth, async (req, res) => {
 });
 
 // Add Task (Atomic Transaction)
-app.post('/api/tasks', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.post('/api/tasks', requireAuth, (req, res) => {
   try {
     const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
     const effectiveUserId = req.user.id || userId;
-    await client.query('BEGIN');
-    
-    const taskRes = await client.query(
-      `INSERT INTO tasks (user_id, course_id, title, description, due_date, due_time, priority, status, category)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, course_id as "courseId", title, description, TO_CHAR(due_date, 'YYYY-MM-DD') as "dueDate", TO_CHAR(due_time, 'HH24:MI') as "dueTime", priority, status, category, TO_CHAR(created_at, 'YYYY-MM-DD') as "createdAt";`,
-      [effectiveUserId, courseId || null, title, description || null, dueDate, dueTime || '23:59:00', priority || 'medium', status || 'todo', category || 'assignment']
-    );
+    const taskId = crypto.randomUUID();
 
-    const task = taskRes.rows[0];
-    const createdSubtasks = [];
+    const insertTx = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO tasks (
+          id, user_id, course_id, title, description, due_date, due_time,
+          priority, status, category
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        taskId,
+        effectiveUserId,
+        courseId || null,
+        title.trim(),
+        description || null,
+        dueDate,
+        dueTime || '23:59',
+        priority || 'medium',
+        status || 'todo',
+        category || 'assignment'
+      );
 
-    if (Array.isArray(subtasks) && subtasks.length > 0) {
-      for (let i = 0; i < subtasks.length; i++) {
-        const st = subtasks[i];
-        const stRes = await client.query(
-          `INSERT INTO subtasks (task_id, title, is_completed, sort_order)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id, title, is_completed as completed;`,
-          [task.id, st.title, st.completed || false, i]
-        );
-        createdSubtasks.push(stRes.rows[0]);
+      const createdSubtasks = [];
+      if (Array.isArray(subtasks) && subtasks.length > 0) {
+        const insertSt = db.prepare(`
+          INSERT INTO subtasks (id, task_id, title, is_completed, sort_order)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (let i = 0; i < subtasks.length; i++) {
+          const st = subtasks[i];
+          const stId = crypto.randomUUID();
+          insertSt.run(stId, taskId, st.title, st.completed ? 1 : 0, i);
+          createdSubtasks.push({ id: stId, title: st.title, completed: Boolean(st.completed) });
+        }
       }
-    }
+      return createdSubtasks;
+    });
 
-    await client.query('COMMIT');
-    task.subtasks = createdSubtasks;
-    res.status(201).json(task);
+    const createdSubtasks = insertTx();
+
+    const createdTask = db.prepare(`
+      SELECT id, course_id as courseId, title, description,
+             due_date as dueDate, due_time as dueTime, priority, status,
+             category, created_at as createdAt
+      FROM tasks WHERE id = ?
+    `).get(taskId);
+
+    createdTask.subtasks = createdSubtasks;
+    res.status(201).json(createdTask);
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
 // Update Task (Atomic Transaction)
-app.put('/api/tasks/:id', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.put('/api/tasks/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     const { title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
-    await client.query('BEGIN');
 
-    const taskRes = await client.query(
-      `UPDATE tasks
-       SET title = COALESCE($1, title),
-           description = $2,
-           due_date = COALESCE($3, due_date),
-           due_time = COALESCE($4, due_time),
-           priority = COALESCE($5, priority),
-           status = COALESCE($6, status),
-           category = COALESCE($7, category)
-       WHERE id = $8 AND user_id = $9
-       RETURNING id, course_id as "courseId", title, description, TO_CHAR(due_date, 'YYYY-MM-DD') as "dueDate", TO_CHAR(due_time, 'HH24:MI') as "dueTime", priority, status, category;`,
-      [title, description, dueDate, dueTime, priority, status, category, id, req.user.id]
-    );
-
-    if (taskRes.rows.length === 0) {
-      await client.query('ROLLBACK');
+    const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!existing) {
       return res.status(404).json({ error: 'Task not found or access denied.' });
     }
 
-    if (Array.isArray(subtasks)) {
-      await client.query('DELETE FROM subtasks WHERE task_id = $1;', [id]);
-      for (let i = 0; i < subtasks.length; i++) {
-        const st = subtasks[i];
-        await client.query(
-          `INSERT INTO subtasks (task_id, title, is_completed, sort_order)
-           VALUES ($1, $2, $3, $4);`,
-          [id, st.title, st.completed || false, i]
-        );
+    const updateTx = db.transaction(() => {
+      db.prepare(`
+        UPDATE tasks
+        SET title = COALESCE(?, title),
+            description = ?,
+            due_date = COALESCE(?, due_date),
+            due_time = COALESCE(?, due_time),
+            priority = COALESCE(?, priority),
+            status = COALESCE(?, status),
+            category = COALESCE(?, category)
+        WHERE id = ? AND user_id = ?
+      `).run(
+        title || null,
+        description !== undefined ? description : existing.description,
+        dueDate || null,
+        dueTime || null,
+        priority || null,
+        status || null,
+        category || null,
+        id,
+        req.user.id
+      );
+
+      if (Array.isArray(subtasks)) {
+        db.prepare('DELETE FROM subtasks WHERE task_id = ?').run(id);
+        const insertSt = db.prepare(`
+          INSERT INTO subtasks (id, task_id, title, is_completed, sort_order)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (let i = 0; i < subtasks.length; i++) {
+          const st = subtasks[i];
+          const stId = st.id || crypto.randomUUID();
+          insertSt.run(stId, id, st.title, st.completed ? 1 : 0, i);
+        }
       }
-    }
+    });
 
-    await client.query('COMMIT');
-    const updatedTask = taskRes.rows[0];
-    const currentSubtasks = await pool.query('SELECT id, title, is_completed as completed FROM subtasks WHERE task_id = $1 ORDER BY sort_order ASC;', [id]);
-    updatedTask.subtasks = currentSubtasks.rows;
+    updateTx();
 
+    const updatedTask = db.prepare(`
+      SELECT id, course_id as courseId, title, description,
+             due_date as dueDate, due_time as dueTime, priority, status,
+             category, created_at as createdAt
+      FROM tasks WHERE id = ?
+    `).get(id);
+
+    const currentSubtasks = db.prepare(`
+      SELECT id, title, (is_completed = 1) as completed
+      FROM subtasks WHERE task_id = ?
+      ORDER BY sort_order ASC
+    `).all(id);
+
+    updatedTask.subtasks = currentSubtasks.map((st) => ({ ...st, completed: Boolean(st.completed) }));
     res.json(updatedTask);
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
 // Delete Task
-app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
+app.delete('/api/tasks/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2;', [id, req.user.id]);
+    db.prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?').run(id, req.user.id);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -640,189 +803,159 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
 });
 
 // Log Attendance (Atomic Transaction)
-app.post('/api/attendance', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.post('/api/attendance', requireAuth, (req, res) => {
   try {
     const { userId, courseId, status, date, note } = req.body;
     const effectiveUserId = req.user.id || userId;
-    await client.query('BEGIN');
-    
-    // 1. Insert record
-    const attRes = await client.query(
-      `INSERT INTO attendance_records (user_id, course_id, log_date, status, note)
-       VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5)
-       RETURNING id, course_id as "courseId", TO_CHAR(log_date, 'YYYY-MM-DD') as date, status, note;`,
-      [effectiveUserId, courseId, date || null, status, note || null]
-    );
+    const recordId = crypto.randomUUID();
+    const logDate = date || new Date().toISOString().split('T')[0];
 
-    // 2. Adjust course totals based on attendance status:
-    // - 'present': increments held and attended
-    // - 'absent': increments held
-    // - 'excused' / 'cancelled': recorded in logs, but excuses the student without lowering percentage
     const isPresent = status === 'present';
     const isCounted = status === 'present' || status === 'absent';
     const heldIncrement = isCounted ? 1 : 0;
     const attendedIncrement = isPresent ? 1 : 0;
 
-    let courseRow;
-    if (heldIncrement > 0) {
-      const courseRes = await client.query(
-        `UPDATE courses
-         SET total_classes_held = total_classes_held + $1,
-             attended_classes = attended_classes + $2
-         WHERE id = $3 AND user_id = $4
-         RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-        [heldIncrement, attendedIncrement, courseId, effectiveUserId]
-      );
-      courseRow = courseRes.rows[0];
-    } else {
-      const courseRes = await client.query(
-        `SELECT id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses"
-         FROM courses WHERE id = $1 AND user_id = $2;`,
-        [courseId, effectiveUserId]
-      );
-      courseRow = courseRes.rows[0];
-    }
+    const logTx = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null);
 
-    await client.query('COMMIT');
-    res.status(201).json({
-      record: attRes.rows[0],
-      updatedCourse: courseRow,
+      if (heldIncrement > 0) {
+        db.prepare(`
+          UPDATE courses
+          SET total_classes_held = total_classes_held + ?,
+              attended_classes = attended_classes + ?
+          WHERE id = ? AND user_id = ?
+        `).run(heldIncrement, attendedIncrement, courseId, effectiveUserId);
+      }
     });
+
+    logTx();
+
+    const record = db.prepare(`
+      SELECT id, course_id as courseId, log_date as date, status, note
+      FROM attendance_records WHERE id = ?
+    `).get(recordId);
+
+    const updatedCourse = db.prepare(`
+      SELECT id, code, name, total_classes_held as totalClasses, attended_classes as attendedClasses
+      FROM courses WHERE id = ? AND user_id = ?
+    `).get(courseId, effectiveUserId);
+
+    res.status(201).json({ record, updatedCourse });
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
 // Delete Specific Attendance Record (e.g. from history view)
-app.delete('/api/attendance/:id', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.delete('/api/attendance/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    await client.query('BEGIN');
+    const rec = db.prepare('SELECT id, user_id, course_id, status FROM attendance_records WHERE id = ?').get(id);
 
-    const recRes = await client.query(
-      `SELECT id, user_id, course_id, status FROM attendance_records WHERE id = $1;`,
-      [id]
-    );
-
-    if (recRes.rows.length === 0) {
-      await client.query('ROLLBACK');
+    if (!rec) {
       return res.status(404).json({ error: 'Attendance record not found.' });
     }
-
-    const rec = recRes.rows[0];
     if (req.user.id !== rec.user_id) {
-      await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Forbidden: Access denied.' });
     }
-
-    await client.query('DELETE FROM attendance_records WHERE id = $1;', [id]);
 
     const isPresent = rec.status === 'present';
     const isCounted = rec.status === 'present' || rec.status === 'absent';
     const heldDecrement = isCounted ? 1 : 0;
     const attendedDecrement = isPresent ? 1 : 0;
 
-    let courseRow;
-    if (heldDecrement > 0) {
-      const courseRes = await client.query(
-        `UPDATE courses
-         SET total_classes_held = GREATEST(0, total_classes_held - $1),
-             attended_classes = GREATEST(0, attended_classes - $2)
-         WHERE id = $3 AND user_id = $4
-         RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-        [heldDecrement, attendedDecrement, rec.course_id, req.user.id]
-      );
-      courseRow = courseRes.rows[0];
-    } else {
-      const courseRes = await client.query(
-        `SELECT id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses"
-         FROM courses WHERE id = $1 AND user_id = $2;`,
-        [rec.course_id, req.user.id]
-      );
-      courseRow = courseRes.rows[0];
-    }
+    const deleteTx = db.transaction(() => {
+      db.prepare('DELETE FROM attendance_records WHERE id = ?').run(id);
 
-    await client.query('COMMIT');
+      if (heldDecrement > 0) {
+        db.prepare(`
+          UPDATE courses
+          SET total_classes_held = MAX(0, total_classes_held - ?),
+              attended_classes = MAX(0, attended_classes - ?)
+          WHERE id = ? AND user_id = ?
+        `).run(heldDecrement, attendedDecrement, rec.course_id, req.user.id);
+      }
+    });
+
+    deleteTx();
+
+    const updatedCourse = db.prepare(`
+      SELECT id, code, name, total_classes_held as totalClasses, attended_classes as attendedClasses
+      FROM courses WHERE id = ? AND user_id = ?
+    `).get(rec.course_id, req.user.id);
+
     res.json({
       success: true,
       deletedRecordId: id,
-      updatedCourse: courseRow,
+      updatedCourse,
     });
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
 // Undo Attendance (Atomic Transaction & Accurate Reversion)
-app.post('/api/attendance/undo', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.post('/api/attendance/undo', requireAuth, (req, res) => {
   try {
     const { userId, courseId } = req.body;
     const effectiveUserId = req.user.id || userId;
-    await client.query('BEGIN');
 
-    // 1. Find the latest attendance record for this course
-    const latestRec = await client.query(
-      `SELECT id, status FROM attendance_records
-       WHERE user_id = $1 AND course_id = $2
-       ORDER BY created_at DESC LIMIT 1;`,
-      [effectiveUserId, courseId]
-    );
+    const latestRec = db.prepare(`
+      SELECT id, status FROM attendance_records
+      WHERE user_id = ? AND course_id = ?
+      ORDER BY created_at DESC LIMIT 1
+    `).get(effectiveUserId, courseId);
 
     let wasPresent = false;
     let wasCounted = false;
     let deletedRecordId = null;
 
-    if (latestRec.rows.length > 0) {
-      const rec = latestRec.rows[0];
-      wasPresent = rec.status === 'present';
-      wasCounted = rec.status === 'present' || rec.status === 'absent';
-      deletedRecordId = rec.id;
-      await client.query('DELETE FROM attendance_records WHERE id = $1;', [rec.id]);
-    } else {
-      // Fallback: If no records exist, assume class was present if attendedClasses > 0
-      const currCourse = await client.query('SELECT total_classes_held, attended_classes FROM courses WHERE id = $1 AND user_id = $2;', [courseId, effectiveUserId]);
-      if (currCourse.rows.length > 0 && currCourse.rows[0].attended_classes > 0) {
-        wasPresent = true;
-        wasCounted = true;
+    const undoTx = db.transaction(() => {
+      if (latestRec) {
+        wasPresent = latestRec.status === 'present';
+        wasCounted = latestRec.status === 'present' || latestRec.status === 'absent';
+        deletedRecordId = latestRec.id;
+        db.prepare('DELETE FROM attendance_records WHERE id = ?').run(latestRec.id);
+      } else {
+        const currCourse = db.prepare('SELECT total_classes_held, attended_classes FROM courses WHERE id = ? AND user_id = ?').get(courseId, effectiveUserId);
+        if (currCourse && currCourse.attended_classes > 0) {
+          wasPresent = true;
+          wasCounted = true;
+        }
       }
-    }
 
-    const attendedDecrement = wasPresent ? 1 : 0;
-    const heldDecrement = wasCounted ? 1 : 0;
+      const attendedDecrement = wasPresent ? 1 : 0;
+      const heldDecrement = wasCounted ? 1 : 0;
 
-    const courseRes = await client.query(
-      `UPDATE courses
-       SET total_classes_held = GREATEST(0, total_classes_held - $1),
-           attended_classes = GREATEST(0, attended_classes - $2)
-       WHERE id = $3 AND user_id = $4
-       RETURNING id, code, name, total_classes_held as "totalClasses", attended_classes as "attendedClasses";`,
-      [heldDecrement, attendedDecrement, courseId, effectiveUserId]
-    );
+      db.prepare(`
+        UPDATE courses
+        SET total_classes_held = MAX(0, total_classes_held - ?),
+            attended_classes = MAX(0, attended_classes - ?)
+        WHERE id = ? AND user_id = ?
+      `).run(heldDecrement, attendedDecrement, courseId, effectiveUserId);
+    });
 
-    await client.query('COMMIT');
+    undoTx();
+
+    const updatedCourse = db.prepare(`
+      SELECT id, code, name, total_classes_held as totalClasses, attended_classes as attendedClasses
+      FROM courses WHERE id = ? AND user_id = ?
+    `).get(courseId, effectiveUserId);
+
     res.json({
       deletedRecordId,
-      updatedCourse: courseRes.rows[0],
+      updatedCourse,
     });
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-// Update User Profile (including collegeMinAttendance, personalGoalAttendance, and semesterStartDate)
-app.put('/api/users/profile', requireAuth, async (req, res) => {
+// Update User Profile
+app.put('/api/users/profile', requireAuth, (req, res) => {
   try {
     const {
       id,
@@ -843,30 +976,50 @@ app.put('/api/users/profile', requireAuth, async (req, res) => {
 
     const minAtt = collegeMinAttendance !== undefined ? Number(collegeMinAttendance) : null;
     let persGoal = personalGoalAttendance !== undefined ? Number(personalGoalAttendance) : null;
-
-    // Enforce constraint: personalGoal >= collegeMin
     if (minAtt !== null && persGoal !== null && persGoal < minAtt) {
       persGoal = minAtt;
     }
 
-    const result = await pool.query(
-      `UPDATE users
-       SET full_name = COALESCE($1, full_name),
-           college_name = COALESCE($2, college_name),
-           branch = COALESCE($3, branch),
-           degree_type = COALESCE($4, degree_type),
-           semester = COALESCE($5, semester),
-           semester_start_date = COALESCE($6, semester_start_date),
-           college_min_attendance = COALESCE($7, college_min_attendance),
-           personal_attendance_goal = COALESCE($8, personal_attendance_goal),
-           target_attendance_percentage = COALESCE($7, target_attendance_percentage),
-           theme_preference = COALESCE($9, theme_preference)
-       WHERE id = $10
-       RETURNING id, full_name as name, email, country, college_name as "collegeName", branch, degree_type as "degreeType", semester, total_semesters as "totalSemesters", TO_CHAR(semester_start_date, 'YYYY-MM-DD') as "semesterStartDate", college_min_attendance as "collegeMinAttendance", personal_attendance_goal as "personalGoalAttendance", theme_preference as theme;`,
-      [name, collegeName, branch, degreeType, semester, semesterStartDate || null, minAtt, persGoal, theme, id]
+    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    db.prepare(`
+      UPDATE users
+      SET full_name = COALESCE(?, full_name),
+          college_name = COALESCE(?, college_name),
+          branch = COALESCE(?, branch),
+          degree_type = COALESCE(?, degree_type),
+          semester = COALESCE(?, semester),
+          semester_start_date = ?,
+          college_min_attendance = COALESCE(?, college_min_attendance),
+          personal_attendance_goal = COALESCE(?, personal_attendance_goal),
+          target_attendance_percentage = COALESCE(?, target_attendance_percentage),
+          theme_preference = COALESCE(?, theme_preference)
+      WHERE id = ?
+    `).run(
+      name || null,
+      collegeName || null,
+      branch || null,
+      degreeType || null,
+      semester || null,
+      semesterStartDate !== undefined ? semesterStartDate : existing.semester_start_date,
+      minAtt,
+      persGoal,
+      minAtt,
+      theme || null,
+      id
     );
 
-    const updated = result.rows[0];
+    const updated = db.prepare(`
+      SELECT id, full_name as name, email, country, college_name as collegeName,
+             branch, degree_type as degreeType, semester, total_semesters as totalSemesters,
+             semester_start_date as semesterStartDate, college_min_attendance as collegeMinAttendance,
+             personal_attendance_goal as personalGoalAttendance, theme_preference as theme
+      FROM users WHERE id = ?
+    `).get(id);
+
     updated.collegeMinAttendance = Number(updated.collegeMinAttendance || 75);
     updated.personalGoalAttendance = Number(updated.personalGoalAttendance || updated.collegeMinAttendance);
     updated.targetAttendance = updated.collegeMinAttendance;
@@ -878,57 +1031,52 @@ app.put('/api/users/profile', requireAuth, async (req, res) => {
 });
 
 // Clear / Wipe Student Data (Atomic Transaction)
-app.post('/api/data/wipe', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.post('/api/data/wipe', requireAuth, (req, res) => {
   try {
     const { userId } = req.body;
     if (req.user.id !== userId) {
       return res.status(403).json({ error: 'Forbidden: Access denied.' });
     }
-    await client.query('BEGIN');
-    await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [userId]);
-    await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [userId]);
-    await client.query('DELETE FROM tasks WHERE user_id = $1;', [userId]);
-    await client.query('DELETE FROM time_slots WHERE user_id = $1;', [userId]);
-    await client.query('DELETE FROM courses WHERE user_id = $1;', [userId]);
-    await client.query('COMMIT');
+
+    const wipeTx = db.transaction(() => {
+      db.prepare('DELETE FROM attendance_records WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM tasks WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM courses WHERE user_id = ?').run(userId);
+    });
+
+    wipeTx();
     res.json({ success: true, message: 'All student data cleared successfully.' });
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
 // Delete Student Account & All Data (Atomic Transaction)
-app.delete('/api/users/:id', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+app.delete('/api/users/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     if (req.user.id !== id) {
       return res.status(403).json({ error: 'Forbidden: You can only delete your own account.' });
     }
-    await client.query('BEGIN');
-    await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [id]);
-    await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [id]);
-    await client.query('DELETE FROM tasks WHERE user_id = $1;', [id]);
-    await client.query('DELETE FROM time_slots WHERE user_id = $1;', [id]);
-    await client.query('DELETE FROM courses WHERE user_id = $1;', [id]);
-    await client.query('DELETE FROM users WHERE id = $1;', [id]);
-    await client.query('COMMIT');
+
+    const deleteAccountTx = db.transaction(() => {
+      db.prepare('DELETE FROM attendance_records WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM tasks WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM courses WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    });
+
+    deleteAccountTx();
     res.json({ success: true, message: 'Student account and all associated data permanently deleted.' });
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-// Restore Student Data Backup to PostgreSQL (Atomic Transaction)
-app.post('/api/data/restore', requireAuth, async (req, res) => {
-  const client = await pool.connect();
+// Restore Student Data Backup to SQLite (Atomic Transaction)
+app.post('/api/data/restore', requireAuth, (req, res) => {
   try {
     const { userId, data } = req.body;
     if (req.user.id !== userId) {
@@ -938,131 +1086,164 @@ app.post('/api/data/restore', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'User ID and backup data are required.' });
     }
 
-    await client.query('BEGIN');
+    const restoreTx = db.transaction(() => {
+      // 1. Clear existing user data
+      db.prepare('DELETE FROM attendance_records WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM tasks WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM courses WHERE user_id = ?').run(userId);
 
-    // 1. Clear existing data
-    await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [userId]);
-    await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [userId]);
-    await client.query('DELETE FROM tasks WHERE user_id = $1;', [userId]);
-    await client.query('DELETE FROM time_slots WHERE user_id = $1;', [userId]);
-    await client.query('DELETE FROM courses WHERE user_id = $1;', [userId]);
+      // 2. Insert courses & track mapping
+      const courseIdMap = new Map();
+      if (Array.isArray(data.courses)) {
+        const insertCourse = db.prepare(`
+          INSERT INTO courses (
+            id, user_id, code, name, professor, default_room, color_hex,
+            credits, attendance_goal, total_classes_held, attended_classes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
-    // 2. Insert courses & track oldId -> newId mapping if needed
-    const courseIdMap = new Map();
-    if (Array.isArray(data.courses)) {
-      for (const c of data.courses) {
-        const ins = await client.query(
-          `INSERT INTO courses (user_id, code, name, professor, default_room, color_hex, credits, attendance_goal, total_classes_held, attended_classes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           RETURNING id;`,
-          [
+        for (const c of data.courses) {
+          const newCourseId = c.id && c.id.length > 5 ? c.id : crypto.randomUUID();
+          courseIdMap.set(c.id, newCourseId);
+          insertCourse.run(
+            newCourseId,
             userId,
-            c.code,
-            c.name,
+            c.code || 'COURSE',
+            c.name || 'Untitled Course',
             c.professor || null,
             c.defaultRoom || null,
             c.color || '#3b82f6',
             c.credits || 3,
             c.attendanceGoal || 75,
             c.totalClasses || 0,
-            c.attendedClasses || 0,
-          ]
-        );
-        courseIdMap.set(c.id, ins.rows[0].id);
+            c.attendedClasses || 0
+          );
+        }
       }
-    }
 
-    // 3. Insert Time Slots
-    if (Array.isArray(data.timeSlots)) {
-      for (const s of data.timeSlots) {
-        const courseId = courseIdMap.get(s.courseId) || s.courseId;
-        await client.query(
-          `INSERT INTO time_slots (user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`,
-          [
+      // 3. Insert Time Slots
+      if (Array.isArray(data.timeSlots)) {
+        const insertSlot = db.prepare(`
+          INSERT INTO time_slots (
+            id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const s of data.timeSlots) {
+          const targetCourseId = courseIdMap.get(s.courseId) || s.courseId;
+          const slotId = s.id && s.id.length > 5 ? s.id : crypto.randomUUID();
+          insertSlot.run(
+            slotId,
             userId,
-            courseId,
+            targetCourseId,
             s.day,
             s.startTime,
             s.endTime,
             s.room || null,
             s.type || 'Lecture',
-            s.notes || null,
-          ]
-        );
+            s.notes || null
+          );
+        }
       }
-    }
 
-    // 4. Insert Tasks & Subtasks
-    if (Array.isArray(data.tasks)) {
-      for (const t of data.tasks) {
-        const courseId = t.courseId ? (courseIdMap.get(t.courseId) || t.courseId) : null;
-        const taskRes = await client.query(
-          `INSERT INTO tasks (user_id, course_id, title, description, due_date, due_time, priority, status, category)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           RETURNING id;`,
-          [
+      // 4. Insert Tasks & Subtasks
+      if (Array.isArray(data.tasks)) {
+        const insertTask = db.prepare(`
+          INSERT INTO tasks (
+            id, user_id, course_id, title, description, due_date, due_time, priority, status, category
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const insertSubtask = db.prepare(`
+          INSERT INTO subtasks (id, task_id, title, is_completed, sort_order)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+
+        for (const t of data.tasks) {
+          const targetCourseId = t.courseId ? courseIdMap.get(t.courseId) || t.courseId : null;
+          const newTaskId = t.id && t.id.length > 5 ? t.id : crypto.randomUUID();
+          insertTask.run(
+            newTaskId,
             userId,
-            courseId,
-            t.title,
+            targetCourseId,
+            t.title || 'Untitled Task',
             t.description || null,
             t.dueDate || new Date().toISOString().split('T')[0],
-            t.dueTime || '23:59:00',
+            t.dueTime || '23:59',
             t.priority || 'medium',
             t.status || 'todo',
-            t.category || 'assignment',
-          ]
-        );
+            t.category || 'assignment'
+          );
 
-        if (Array.isArray(t.subtasks) && t.subtasks.length > 0) {
-          for (let i = 0; i < t.subtasks.length; i++) {
-            const st = t.subtasks[i];
-            await client.query(
-              `INSERT INTO subtasks (task_id, title, is_completed, sort_order)
-               VALUES ($1, $2, $3, $4);`,
-              [taskRes.rows[0].id, st.title, st.completed || false, i]
-            );
+          if (Array.isArray(t.subtasks)) {
+            for (let i = 0; i < t.subtasks.length; i++) {
+              const st = t.subtasks[i];
+              const stId = st.id && st.id.length > 5 ? st.id : crypto.randomUUID();
+              insertSubtask.run(stId, newTaskId, st.title, st.completed ? 1 : 0, i);
+            }
           }
         }
       }
-    }
 
-    // 5. Insert Attendance Records
-    if (Array.isArray(data.attendanceRecords)) {
-      for (const a of data.attendanceRecords) {
-        const courseId = courseIdMap.get(a.courseId) || a.courseId;
-        await client.query(
-          `INSERT INTO attendance_records (user_id, course_id, log_date, status, note)
-           VALUES ($1, $2, $3, $4, $5);`,
-          [userId, courseId, a.date || null, a.status || 'present', a.note || null]
-        );
+      // 5. Insert Attendance Records
+      if (Array.isArray(data.attendanceRecords)) {
+        const insertAtt = db.prepare(`
+          INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const a of data.attendanceRecords) {
+          const targetCourseId = courseIdMap.get(a.courseId) || a.courseId;
+          const attId = a.id && a.id.length > 5 ? a.id : crypto.randomUUID();
+          insertAtt.run(
+            attId,
+            userId,
+            targetCourseId,
+            a.date || new Date().toISOString().split('T')[0],
+            a.status || 'present',
+            a.note || null
+          );
+        }
       }
-    }
 
-    await client.query('COMMIT');
-    const fullData = await fetchFullStudentData(userId, data.theme || 'dark-slate');
-    res.json({ success: true, data: fullData });
+      // 6. Update user theme preference if present
+      if (data.theme) {
+        db.prepare('UPDATE users SET theme_preference = ? WHERE id = ?').run(data.theme, userId);
+      }
+    });
+
+    restoreTx();
+
+    const restoredData = fetchFullStudentData(userId, data.theme || 'dark-slate');
+    res.json({
+      success: true,
+      message: 'All student data successfully restored to SQLite database.',
+      data: restoredData,
+    });
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Data Restore Error:', err);
-    res.status(500).json({ error: 'Failed to restore student backup: ' + err.message });
-  } finally {
-    client.release();
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Serve Vite production build if dist directory exists
-const distPath = path.join(__dirname, 'dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.join(distPath, 'index.html'));
-    }
-    next();
-  });
-}
+// ----------------------------------------------------------------------------
+// SERVE PRODUCTION CLIENT & SPA ROUTING
+// ----------------------------------------------------------------------------
+app.use(express.static(path.join(__dirname, 'dist')));
 
+// Express 5 compatible catch-all
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    const indexPath = path.join(__dirname, 'dist', 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+  }
+  next();
+});
+
+// Start Server
 app.listen(PORT, () => {
-  console.log(`🚀 AcademiaSync Server running on http://localhost:${PORT}`);
+  console.log(`🚀 AcademiaSync server running at http://localhost:${PORT}`);
+  console.log(`📁 Local database engine: SQLite (${path.relative(__dirname, dbPath)})`);
 });

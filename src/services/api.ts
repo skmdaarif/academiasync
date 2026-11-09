@@ -87,7 +87,7 @@ export function saveLocalStudentData(userId: string, data: StudentData) {
 // API Endpoints with Automatic Local Fallback
 // ----------------------------------------------------------------------------
 
-export async function apiCheckHealth(): Promise<{ isOnline: boolean; mode: 'postgres' | 'local'; message?: string }> {
+export async function apiCheckHealth(): Promise<{ isOnline: boolean; mode: 'sqlite' | 'local'; message?: string }> {
   try {
     const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(2500) });
     if (!res.ok) return { isOnline: false, mode: 'local' };
@@ -111,7 +111,7 @@ export interface RegisterPayload {
   staySignedIn?: boolean;
 }
 
-export async function apiRegister(payload: RegisterPayload): Promise<{ success: boolean; error?: string; token?: string; user?: UserAccount; data?: StudentData; mode: 'postgres' | 'local' }> {
+export async function apiRegister(payload: RegisterPayload): Promise<{ success: boolean; error?: string; token?: string; user?: UserAccount; data?: StudentData; mode: 'sqlite' | 'local' }> {
   try {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
@@ -121,10 +121,10 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     const json = await res.json();
     if (res.ok && json.success) {
       if (json.token) setAuthToken(json.token);
-      return { ...json, mode: 'postgres' };
+      return { ...json, mode: 'sqlite' };
     }
     if (res.status === 409) {
-      return { success: false, error: json.error, mode: 'postgres' };
+      return { success: false, error: json.error, mode: 'sqlite' };
     }
   } catch {
     // Network or server down: fallback to local storage
@@ -162,7 +162,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
   };
 }
 
-export async function apiLogin(email: string, password: string, staySignedIn?: boolean): Promise<{ success: boolean; error?: string; token?: string; user?: UserAccount; data?: StudentData; mode: 'postgres' | 'local' }> {
+export async function apiLogin(email: string, password: string, staySignedIn?: boolean): Promise<{ success: boolean; error?: string; token?: string; user?: UserAccount; data?: StudentData; mode: 'sqlite' | 'local' }> {
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
@@ -172,10 +172,10 @@ export async function apiLogin(email: string, password: string, staySignedIn?: b
     const json = await res.json();
     if (res.ok && json.success) {
       if (json.token) setAuthToken(json.token);
-      return { ...json, mode: 'postgres' };
+      return { ...json, mode: 'sqlite' };
     }
     if (res.status === 401 || res.status === 404) {
-      return { success: false, error: json.error, mode: 'postgres' };
+      return { success: false, error: json.error, mode: 'sqlite' };
     }
   } catch {
     // Network or server down: check local storage

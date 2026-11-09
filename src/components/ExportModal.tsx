@@ -26,7 +26,7 @@ interface ExportModalProps {
 }
 
 export function ExportModal({ user, state, onClose, onRestoreState }: ExportModalProps) {
-  const [activeTab, setActiveTab] = useState<'calendar' | 'backup' | 'postgres'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'backup' | 'database'>('calendar');
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [importError, setImportError] = useState('');
 
@@ -85,7 +85,7 @@ export function ExportModal({ user, state, onClose, onRestoreState }: ExportModa
     reader.readAsText(file);
   };
 
-  const sampleSQL = `-- Connect your local PostgreSQL 'academiasync'
+  const sampleSQL = `-- Connect to your local SQLite file 'data/academiasync.db' (via sqlite3 CLI or VS Code SQLite extension)
 -- Run queries for your individual student account:
 SELECT c.code, c.name, ts.day_of_week, ts.start_time, ts.end_time, ts.room
 FROM time_slots ts
@@ -94,7 +94,9 @@ WHERE ts.user_id = '${user.id}'
 ORDER BY ts.start_time ASC;
 
 -- Check your attendance analytics:
-SELECT * FROM view_course_attendance_analytics
+SELECT code, name, attended_classes, total_classes_held,
+       ROUND((CAST(attended_classes AS REAL) / MAX(1, total_classes_held)) * 100, 1) AS attendance_percentage
+FROM courses
 WHERE user_id = '${user.id}';`;
 
   const handleCopySQL = () => {
@@ -164,14 +166,14 @@ WHERE user_id = '${user.id}';`;
             JSON Backup / Restore
           </button>
           <button
-            onClick={() => setActiveTab('postgres')}
+            onClick={() => setActiveTab('database')}
             className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold transition-all ${
-              activeTab === 'postgres' ? 'text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              activeTab === 'database' ? 'text-white shadow-sm' : 'text-slate-400 hover:text-white'
             }`}
-            style={{ backgroundColor: activeTab === 'postgres' ? theme.accent : 'transparent' }}
+            style={{ backgroundColor: activeTab === 'database' ? theme.accent : 'transparent' }}
           >
             <Database className="w-3.5 h-3.5" />
-            PostgreSQL DB Queries
+            SQLite DB Queries
           </button>
         </div>
 
@@ -297,14 +299,14 @@ WHERE user_id = '${user.id}';`;
           </div>
         )}
 
-        {/* TAB 3: POSTGRESQL SCHEMA */}
-        {activeTab === 'postgres' && (
+        {/* TAB 3: SQLITE SCHEMA */}
+        {activeTab === 'database' && (
           <div className="space-y-4">
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  PostgreSQL Student Queries
+                  SQLite Student Queries
                 </span>
                 <button
                   onClick={handleCopySQL}
@@ -316,7 +318,7 @@ WHERE user_id = '${user.id}';`;
               </div>
 
               <p className="text-xs text-slate-400 mb-3">
-                Your database tables are initialized in your local PostgreSQL database <code className="text-indigo-300">academiasync</code>.
+                Your database tables are stored in your zero-config local file <code className="text-indigo-300">data/academiasync.db</code>.
               </p>
 
               <pre className="p-3 rounded-xl bg-black/50 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-48 scrollbar-thin">

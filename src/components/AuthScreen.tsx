@@ -34,11 +34,11 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showTimeoutAlert, setShowTimeoutAlert] = useState(sessionExpiredNotice || false);
-  const [serverMode, setServerMode] = useState<'postgres' | 'local'>('local');
+  const [serverMode, setServerMode] = useState<'sqlite' | 'local'>('local');
 
   useEffect(() => {
     apiCheckHealth().then((h) => {
-      setServerMode(h.mode);
+      setServerMode(h.mode === 'sqlite' ? 'sqlite' : 'local');
     });
   }, []);
 
@@ -192,10 +192,10 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
             Smart College Timetable, Safe-Bunk Attendance Engine & Task Hub
           </p>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold mt-2.5 bg-white/5 border border-white/10 text-slate-300">
-            {serverMode === 'postgres' ? (
+            {serverMode === 'sqlite' ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>🐘 PostgreSQL Connected</span>
+                <span>🗄️ Embedded SQLite Database (Local)</span>
               </>
             ) : (
               <>
@@ -580,7 +580,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
         <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            {serverMode === 'postgres' ? 'PostgreSQL: academiasync' : 'Engine: Local Browser Storage'}
+            {serverMode === 'sqlite' ? 'SQLite Engine: academiasync.db' : 'Engine: Local Browser Storage'}
           </span>
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
