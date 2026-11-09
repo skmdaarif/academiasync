@@ -11,6 +11,7 @@ interface SettingsModalProps {
   onUpdateCourse?: (course: Course) => void;
   onDeleteCourse: (courseId: string) => void;
   onClearAllData: () => void;
+  onDeleteAccount: () => void;
 }
 
 const PRESET_COLORS = [
@@ -33,6 +34,7 @@ export function SettingsModal({
   onUpdateCourse,
   onDeleteCourse,
   onClearAllData,
+  onDeleteAccount,
 }: SettingsModalProps) {
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
@@ -54,6 +56,16 @@ export function SettingsModal({
     if (window.confirm('Are you sure you want to erase all your courses, schedule slots, and tasks to start fresh? This cannot be undone.')) {
       onClearAllData();
       onClose();
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    if (
+      window.confirm(
+        '⚠️ PERMANENT ACCOUNT DELETION\n\nAre you sure you want to delete your student account? All your courses, timetable slots, attendance logs, and tasks will be erased permanently. This action CANNOT be undone.'
+      )
+    ) {
+      onDeleteAccount();
     }
   };
 
@@ -262,17 +274,29 @@ export function SettingsModal({
           </div>
 
           {/* Footer controls */}
-          <div className="flex items-center justify-between pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={handleClearData}
-              className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-rose-950/30 transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Wipe Data & Reset Blank
-            </button>
-
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleClearData}
+                className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-amber-950/30 transition-colors"
+                title="Wipe schedule and start blank while keeping account"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset Data
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-rose-950/30 transition-colors"
+                title="Permanently remove your account and all data"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Account
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={onClose}

@@ -22,7 +22,8 @@ import {
   apiLogAttendance, 
   apiUndoAttendance,
   apiUpdateProfile, 
-  apiWipeData 
+  apiWipeData,
+  apiDeleteAccount 
 } from './services/api';
 import { THEMES } from './styles/themes';
 import { AuthScreen } from './components/AuthScreen';
@@ -390,6 +391,29 @@ export function App() {
     }
   };
 
+  // Permanently delete user account
+  const handleDeleteAccount = async () => {
+    if (!currentUser) return;
+    try {
+      await apiDeleteAccount(currentUser.id);
+      setCurrentUser(null);
+      setState({
+        courses: [],
+        timeSlots: [],
+        tasks: [],
+        attendanceRecords: [],
+        theme: 'dark-slate',
+        activeView: 'dashboard',
+      });
+      localStorage.removeItem(SESSION_KEY);
+      setShowSettingsModal(false);
+      showToast('Your account and all associated data have been permanently deleted.', 'info');
+    } catch (err) {
+      console.error('Error deleting account:', err);
+      showToast('Failed to delete account. Please try again.', 'error');
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-300">
       
@@ -606,6 +630,7 @@ export function App() {
           onUpdateCourse={handleUpdateCourse}
           onDeleteCourse={handleDeleteCourse}
           onClearAllData={handleClearAllData}
+          onDeleteAccount={handleDeleteAccount}
         />
       )}
 

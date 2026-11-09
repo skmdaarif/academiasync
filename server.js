@@ -771,6 +771,28 @@ app.post('/api/data/wipe', async (req, res) => {
   }
 });
 
+// Delete Student Account & All Data (Atomic Transaction)
+app.delete('/api/users/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    await client.query('BEGIN');
+    await client.query('DELETE FROM attendance_records WHERE user_id = $1;', [id]);
+    await client.query('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1);', [id]);
+    await client.query('DELETE FROM tasks WHERE user_id = $1;', [id]);
+    await client.query('DELETE FROM time_slots WHERE user_id = $1;', [id]);
+    await client.query('DELETE FROM courses WHERE user_id = $1;', [id]);
+    await client.query('DELETE FROM users WHERE id = $1;', [id]);
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Student account and all associated data permanently deleted.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Restore Student Data Backup to PostgreSQL (Atomic Transaction)
 app.post('/api/data/restore', async (req, res) => {
   const client = await pool.connect();

@@ -535,3 +535,32 @@ export async function apiRestoreStudentData(userId: string, data: StudentData): 
   saveLocalStudentData(userId, data);
   return { success: true, data };
 }
+
+export async function apiDeleteAccount(userId: string): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/users/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      // Also clean up any mirrored local storage for this user
+      try {
+        const users = getLocalUsers().filter((u) => u.id !== userId);
+        localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
+        localStorage.removeItem(`${LOCAL_STORAGE_DATA_PREFIX}${userId}`);
+      } catch {
+        // Ignore
+      }
+      setAuthToken(null);
+      return;
+    }
+  } catch {
+    // Fallback to local storage
+  }
+
+  const users = getLocalUsers().filter((u) => u.id !== userId);
+  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
+  localStorage.removeItem(`${LOCAL_STORAGE_DATA_PREFIX}${userId}`);
+  setAuthToken(null);
+}
+
