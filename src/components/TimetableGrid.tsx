@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   DayOfWeek, 
   TimeSlot, 
@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { THEMES } from '../styles/themes';
 import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes } from '../utils/timeUtils';
+import { getStoredPreference, setStoredPreference } from '../services/platform';
 import { 
   Clock, 
   MapPin, 
@@ -22,7 +23,9 @@ import {
   Sparkles, 
   Search,
   BookOpen,
-  X
+  X,
+  Printer,
+  CalendarDays
 } from 'lucide-react';
 
 interface TimetableGridProps {
@@ -64,6 +67,41 @@ export function TimetableGrid({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+
+  const [daysSpan, setDaysSpan] = useState<'5' | '6' | '7'>(() => {
+    const saved = getStoredPreference('timetable_days_span', '');
+    if (saved === '5' || saved === '6' || saved === '7') return saved;
+    if (state.timeSlots.some((s) => s.day === 'Sunday')) return '7';
+    if (state.timeSlots.some((s) => s.day === 'Saturday')) return '6';
+    return '5';
+  });
+
+  const activeDays: DayOfWeek[] = useMemo(() => {
+    if (daysSpan === '5') {
+      return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    }
+    if (daysSpan === '6') {
+      return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    }
+    return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  }, [daysSpan]);
+
+  const handleDaysSpanChange = (span: '5' | '6' | '7') => {
+    setDaysSpan(span);
+    setStoredPreference('timetable_days_span', span);
+    const newActive = span === '5'
+      ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+      : span === '6'
+      ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    if (!newActive.includes(selectedDay)) {
+      setSelectedDay(newActive[0] as DayOfWeek);
+    }
+  };
+
+  const weekendHiddenSlots = useMemo(() => {
+    return state.timeSlots.filter((s) => !activeDays.includes(s.day));
+  }, [state.timeSlots, activeDays]);
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
   const courseMap = new Map(state.courses.map((c) => [c.id, c]));
@@ -125,7 +163,7 @@ export function TimetableGrid({
           borderColor: theme.cardBorder,
         }}
       >
-        {/* Left: View Switcher & Search */}
+        {/* Left: View Switcher, Days Span & Search */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center p-1 rounded-2xl bg-white/5 border border-white/5">
             <button
@@ -154,6 +192,46 @@ export function TimetableGrid({
             </button>
           </div>
 
+          {/* 5-day / 6-day / 7-day selector */}
+          <div className="flex items-center p-1 rounded-2xl bg-white/5 border border-white/5 text-[11px] font-semibold" title="Cycle through 5-Day (Mon-Fri), 6-Day (Mon-Sat), or 7-Day Week view">
+            <button
+              type="button"
+              onClick={() => handleDaysSpanChange('5')}
+              className={`px-2.5 py-1 rounded-xl transition-all ${
+                daysSpan === '5' ? 'text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+              style={{
+                backgroundColor: daysSpan === '5' ? theme.accent : 'transparent',
+              }}
+            >
+              5 Days
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDaysSpanChange('6')}
+              className={`px-2.5 py-1 rounded-xl transition-all ${
+                daysSpan === '6' ? 'text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+              style={{
+                backgroundColor: daysSpan === '6' ? theme.accent : 'transparent',
+              }}
+            >
+              6 Days
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDaysSpanChange('7')}
+              className={`px-2.5 py-1 rounded-xl transition-all ${
+                daysSpan === '7' ? 'text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+              style={{
+                backgroundColor: daysSpan === '7' ? theme.accent : 'transparent',
+              }}
+            >
+              7 Days
+            </button>
+          </div>
+
           <div className="relative flex-1 sm:w-60">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <input
@@ -166,8 +244,8 @@ export function TimetableGrid({
           </div>
         </div>
 
-        {/* Right: Slot Type Filter & Add Class Button */}
-        <div className="flex items-center gap-2">
+        {/* Right: Slot Type Filter, Print & Add Class Button */}
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
@@ -180,6 +258,16 @@ export function TimetableGrid({
             <option value="Seminar" className="bg-slate-900">Seminars</option>
             <option value="Club / Activity" className="bg-slate-900">Clubs / Activities</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 hover:text-white hover:bg-white/10 transition-colors"
+            title="Print Timetable or Save to PDF"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Print
+          </button>
 
           <button
             onClick={onOpenAddCourse}
@@ -253,40 +341,55 @@ export function TimetableGrid({
 
       {/* Day Selector Tabs (For Daily Mode) */}
       {viewMode === 'daily' && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-          {DAYS_ORDER.map((day) => {
-            const isSelected = selectedDay === day;
-            const isToday = todayName === day;
-            const daySlotCount = state.timeSlots.filter((s) => s.day === day).length;
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+            {activeDays.map((day) => {
+              const isSelected = selectedDay === day;
+              const isToday = todayName === day;
+              const daySlotCount = state.timeSlots.filter((s) => s.day === day).length;
 
-            return (
-              <button
-                key={day}
-                onClick={() => setSelectedDay(day)}
-                className={`flex-1 min-w-[105px] py-3 px-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-1 ${
-                  isSelected
-                    ? 'shadow-lg ring-2 ring-indigo-500/50'
-                    : 'hover:bg-white/5 opacity-80'
-                }`}
-                style={{
-                  backgroundColor: isSelected ? theme.headerBg : theme.cardBg,
-                  borderColor: isSelected ? theme.accent : theme.cardBorder,
-                }}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-xs font-bold ${isSelected ? 'text-white' : ''}`} style={{ color: isSelected ? '#ffffff' : theme.textPrimary }}>
-                    {day.slice(0, 3)}
+              return (
+                <button
+                  key={day}
+                  onClick={() => setSelectedDay(day)}
+                  className={`flex-1 min-w-[105px] py-3 px-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-1 ${
+                    isSelected
+                      ? 'shadow-lg ring-2 ring-indigo-500/50'
+                      : 'hover:bg-white/5 opacity-80'
+                  }`}
+                  style={{
+                    backgroundColor: isSelected ? theme.headerBg : theme.cardBg,
+                    borderColor: isSelected ? theme.accent : theme.cardBorder,
+                  }}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs font-bold ${isSelected ? 'text-white' : ''}`} style={{ color: isSelected ? '#ffffff' : theme.textPrimary }}>
+                      {day.slice(0, 3)}
+                    </span>
+                    {isToday && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" title="Today" />
+                    )}
+                  </div>
+                  <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>
+                    {daySlotCount} {daySlotCount === 1 ? 'class' : 'classes'}
                   </span>
-                  {isToday && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" title="Today" />
-                  )}
-                </div>
-                <span className="text-[11px] font-medium" style={{ color: theme.textSecondary }}>
-                  {daySlotCount} {daySlotCount === 1 ? 'class' : 'classes'}
-                </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {weekendHiddenSlots.length > 0 && (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <span>Notice: You have {weekendHiddenSlots.length} class{weekendHiddenSlots.length > 1 ? 'es' : ''} on weekend days currently hidden from this view.</span>
+              <button
+                type="button"
+                onClick={() => handleDaysSpanChange('7')}
+                className="underline font-bold hover:text-white ml-2"
+              >
+                Switch to 7-Day View
               </button>
-            );
-          })}
+            </div>
+          )}
         </div>
       )}
 
@@ -435,12 +538,26 @@ export function TimetableGrid({
 
       {/* WEEKLY MATRIX VIEW */}
       {viewMode === 'weekly' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {DAYS_ORDER.filter((d) => d !== 'Sunday' || state.timeSlots.some((s) => s.day === 'Sunday')).map((day) => {
-            const daySlots = state.timeSlots
-              .filter((s) => s.day === day)
-              .sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
-            const isToday = todayName === day;
+        <div className="space-y-4">
+          {weekendHiddenSlots.length > 0 && (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <span>Notice: You have {weekendHiddenSlots.length} class{weekendHiddenSlots.length > 1 ? 'es' : ''} on weekend days currently hidden from this matrix.</span>
+              <button
+                type="button"
+                onClick={() => handleDaysSpanChange('7')}
+                className="underline font-bold hover:text-white ml-2"
+              >
+                Switch to 7-Day View
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {activeDays.map((day) => {
+              const daySlots = state.timeSlots
+                .filter((s) => s.day === day)
+                .sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
+              const isToday = todayName === day;
 
             return (
               <div
@@ -546,6 +663,7 @@ export function TimetableGrid({
               </div>
             );
           })}
+          </div>
         </div>
       )}
 

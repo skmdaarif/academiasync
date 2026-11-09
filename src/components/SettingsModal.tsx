@@ -12,6 +12,7 @@ interface SettingsModalProps {
   onDeleteCourse: (courseId: string) => void;
   onClearAllData: () => void;
   onDeleteAccount: () => void;
+  onSyncToSQLite?: () => void;
   onSyncToPostgres?: () => void;
 }
 
@@ -36,8 +37,10 @@ export function SettingsModal({
   onDeleteCourse,
   onClearAllData,
   onDeleteAccount,
+  onSyncToSQLite,
   onSyncToPostgres,
 }: SettingsModalProps) {
+  const handleSync = onSyncToSQLite || onSyncToPostgres;
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
   const [formData, setFormData] = useState<UserAccount>({ ...user });
@@ -278,10 +281,10 @@ export function SettingsModal({
           {/* Footer controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
             <div className="flex items-center gap-2 flex-wrap">
-              {onSyncToPostgres && (
+              {handleSync && (
                 <button
                   type="button"
-                  onClick={onSyncToPostgres}
+                  onClick={handleSync}
                   className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-950/30 transition-colors"
                   title="Push and synchronize all current timetable and attendance data into the local SQLite database"
                 >

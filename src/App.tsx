@@ -675,7 +675,7 @@ export function App() {
           onDeleteCourse={handleDeleteCourse}
           onClearAllData={handleClearAllData}
           onDeleteAccount={handleDeleteAccount}
-          onSyncToPostgres={handleSyncToSQLite}
+          onSyncToSQLite={handleSyncToSQLite}
         />
       )}
 

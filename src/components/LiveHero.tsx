@@ -10,11 +10,13 @@ import {
   Coffee,
   CalendarCheck,
   Plus,
-  BookOpen
+  BookOpen,
+  Bell
 } from 'lucide-react';
 import { StudentData, AttendanceStatus, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
 import { getCurrentAndNextClass, formatTime12h, calculateAttendance } from '../utils/timeUtils';
+import { sendAppNotification, requestNotificationPermission } from '../services/platform';
 import confetti from 'canvas-confetti';
 
 interface LiveHeroProps {
@@ -33,6 +35,7 @@ export function LiveHero({
   onOpenAddModal,
 }: LiveHeroProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [notifiedSlots, setNotifiedSlots] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -41,6 +44,21 @@ export function LiveHero({
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
   const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime);
+
+  // Background reminder notifications for upcoming lectures (<= 10 mins before class)
+  useEffect(() => {
+    if (status.nextSlot && status.nextCourse && status.timeUntilNext > 0 && status.timeUntilNext <= 10) {
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const notifyKey = `${status.nextSlot.id}_${todayDateStr}`;
+      if (!notifiedSlots.has(notifyKey)) {
+        setNotifiedSlots((prev) => new Set(prev).add(notifyKey));
+        sendAppNotification(
+          `Upcoming Lecture in ${status.timeUntilNext} min: ${status.nextCourse.code}`,
+          `${status.nextCourse.name} starts at ${formatTime12h(status.nextSlot.startTime)} (${status.nextSlot.room || 'Room TBA'})`
+        );
+      }
+    }
+  }, [status.nextSlot, status.nextCourse, status.timeUntilNext, notifiedSlots]);
 
   // Quick stats
   const pendingTasks = state.tasks.filter((t) => t.status !== 'completed');
@@ -302,11 +320,21 @@ export function LiveHero({
                   <Sparkles className="w-3.5 h-3.5" />
                   Up Next Today
                 </span>
-                {status.nextSlot && (
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-950/40 text-sky-400 border border-sky-500/20">
-                    in {status.timeUntilNext}m
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => requestNotificationPermission()}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                    title="Enable background class reminder alerts"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                  </button>
+                  {status.nextSlot && (
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-950/40 text-sky-400 border border-sky-500/20">
+                      in {status.timeUntilNext}m
+                    </span>
+                  )}
+                </div>
               </div>
 
               {status.nextSlot && status.nextCourse ? (
