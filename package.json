@@ -9,7 +9,10 @@
     "dev": "concurrently -n \"BACKEND,CLIENT\" -c \"cyan,magenta\" \"node server.js\" \"vite\"",
     "build": "tsc -b && vite build",
     "start": "node server.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -32,6 +35,8 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",

@@ -169,11 +169,29 @@ The application and REST API are served together at `http://localhost:5001`.
 
 ---
 
+## 🖥️ Universal Native Desktop App (Tauri v2)
+
+AcademiaSync is also available as a **high-performance native desktop application** for macOS, Windows, and Linux, powered by [Tauri v2](https://v2.tauri.app) and sharing 100% of the React core and local SQLite database:
+
+- **System Tray & Menu Bar Widget**: Resides in your OS menu bar / notification area for instant 1-click access to your daily classes.
+- **Native OS Alarms & Notifications**: Triggers native desktop notification banners 10 minutes prior to lecture start times.
+- **Ultra-Lightweight**: Uses the native OS webview engine, consuming under 30MB of RAM.
+
+```bash
+# Run the native desktop app in development
+npm run desktop:dev
+
+# Build native installers (.app and .dmg for macOS, .exe for Windows, .deb for Linux)
+npm run desktop:build
+```
+
+---
+
 ## 📡 REST API Reference
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | PostgreSQL connection health check |
+| `GET` | `/api/health` | SQLite database connection health check |
 | `POST` | `/api/auth/register` | Register a new student profile |
 | `POST` | `/api/auth/login` | Authenticate student and load credentials |
 | `GET` | `/api/data/:userId` | Fetch full student payload (courses, slots, tasks, attendance) |

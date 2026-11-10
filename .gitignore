@@ -33,3 +33,6 @@ dist-ssr
 data/*.db
 data/*.db-shm
 data/*.db-wal
+
+# Tauri build artifacts
+src-tauri/target/
