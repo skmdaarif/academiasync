@@ -141,8 +141,8 @@ AcademiaSync runs on an **Embedded SQLite Engine** with browser offline fallback
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/academiasync.git
-cd time-table
+git clone https://github.com/skmdaarif/academiasync.git
+cd academiasync
 
 # 2. Install dependencies
 npm install
@@ -211,7 +211,7 @@ npm run desktop:build
 
 ## 🔒 Security & Auto-Logout
 
-AcademiaSync includes a built-in **10-minute inactivity watchdog** in [`App.tsx`](file:///Users/skmdaarif/Desktop/Agent-projects/time-table/src/App.tsx). If no keyboard or mouse interactions are detected for 10 minutes, the session is cleared automatically from client storage to safeguard student privacy on shared campus library or lab computers.
+AcademiaSync includes a built-in **10-minute inactivity watchdog** in [`src/App.tsx`](src/App.tsx). If no keyboard or mouse interactions are detected for 10 minutes, the session is cleared automatically from client storage to safeguard student privacy on shared campus library or lab computers.
 
 ---
 
