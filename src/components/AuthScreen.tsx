@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   Sparkles,
   Database,
-  History
+  History,
+  Calendar
 } from 'lucide-react';
 
 interface AuthScreenProps {
@@ -54,6 +55,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [branch, setBranch] = useState('');
   const [degreeType, setDegreeType] = useState(DEGREE_PROGRAMS[0].id);
   const [semester, setSemester] = useState('Semester 1');
+  const [semesterStartDate, setSemesterStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [targetAttendance, setTargetAttendance] = useState(75);
 
   // Smart Multi-Semester Onboarding State
@@ -173,6 +175,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           branch: branch.trim() || 'General Studies',
           degreeType: selectedDegreeObj.name,
           semester,
+          semesterStartDate,
           targetAttendance,
           staySignedIn,
           admissionType: currentSemNum > 1 ? admissionType : 'fresh',
@@ -479,6 +482,28 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Term / Classes Commencement Date Anchor */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    When do classes start? (Term Commencement)
+                  </label>
+                  <span className="text-[10px] text-indigo-400 font-mono">Day 1 Anchor</span>
+                </div>
+                <div className="relative">
+                  <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="date"
+                    value={semesterStartDate}
+                    onChange={(e) => setSemesterStartDate(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Timetable and attendance tracking anchor from this date onwards.
+                </p>
               </div>
 
               {/* Attendance Target */}

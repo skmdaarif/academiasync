@@ -1,4 +1,4 @@
-import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType } from '../types';
+import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam } from '../types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'academiasync_auth_token';
@@ -61,7 +61,11 @@ export function saveLocalUser(user: UserAccount) {
 export function getLocalStudentData(userId: string): StudentData {
   try {
     const raw = localStorage.getItem(`${LOCAL_STORAGE_DATA_PREFIX}${userId}`);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!parsed.exams) parsed.exams = [];
+      return parsed;
+    }
   } catch {
     // Ignore
   }
@@ -71,6 +75,7 @@ export function getLocalStudentData(userId: string): StudentData {
     tasks: [],
     attendanceRecords: [],
     semesters: [],
+    exams: [],
     activeSemesterNumber: 1,
     theme: 'dark-slate',
     activeView: 'dashboard',
@@ -112,6 +117,7 @@ export interface RegisterPayload {
   targetAttendance: number;
   staySignedIn?: boolean;
   admissionType?: AdmissionType;
+  semesterStartDate?: string;
   backfilledSemesters?: AcademicSemester[];
 }
 
@@ -151,6 +157,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     totalSemesters: 8,
     admissionType,
     activeSemesterNumber: parsedSem,
+    semesterStartDate: payload.semesterStartDate,
     collegeMinAttendance: payload.targetAttendance || 75,
     personalGoalAttendance: Math.max(85, payload.targetAttendance || 75),
     targetAttendance: payload.targetAttendance || 75,
@@ -263,8 +270,11 @@ export async function apiAddCourse(course: Omit<Course, 'id' | 'totalClasses' | 
     semesterNumber: course.semesterNumber || data.activeSemesterNumber || 1,
     totalClasses: 0,
     attendedClasses: 0,
+    baselineClassesHeld: course.baselineClassesHeld || 0,
+    baselineAttendedClasses: course.baselineAttendedClasses || 0,
   };
   data.courses.push(newCourse);
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return newCourse;
 }
@@ -284,6 +294,7 @@ export async function apiUpdateCourse(course: Course): Promise<Course> {
   const userId = course.userId || 'local_user';
   const data = getLocalStudentData(userId);
   data.courses = data.courses.map((c) => (c.id === course.id ? course : c));
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return course;
 }
@@ -303,6 +314,7 @@ export async function apiDeleteCourse(courseId: string, userId: string = 'local_
   data.courses = data.courses.filter((c) => c.id !== courseId);
   data.timeSlots = data.timeSlots.filter((s) => s.courseId !== courseId);
   data.attendanceRecords = data.attendanceRecords.filter((a) => a.courseId !== courseId);
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
 }
 
@@ -326,6 +338,7 @@ export async function apiAddSlot(slot: Omit<TimeSlot, 'id'>): Promise<TimeSlot> 
     semesterNumber: slot.semesterNumber || data.activeSemesterNumber || 1,
   };
   data.timeSlots.push(newSlot);
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return newSlot;
 }
@@ -345,6 +358,7 @@ export async function apiUpdateSlot(slot: TimeSlot): Promise<TimeSlot> {
   const userId = slot.userId || 'local_user';
   const data = getLocalStudentData(userId);
   data.timeSlots = data.timeSlots.map((s) => (s.id === slot.id ? slot : s));
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return slot;
 }
@@ -362,6 +376,7 @@ export async function apiDeleteSlot(slotId: string, userId: string = 'local_user
 
   const data = getLocalStudentData(userId);
   data.timeSlots = data.timeSlots.filter((s) => s.id !== slotId);
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
 }
 
@@ -386,6 +401,7 @@ export async function apiAddTask(task: Omit<Task, 'id' | 'createdAt'>): Promise<
     semesterNumber: task.semesterNumber || data.activeSemesterNumber || 1,
   };
   data.tasks.unshift(newTask);
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return newTask;
 }
@@ -405,6 +421,7 @@ export async function apiUpdateTask(task: Task): Promise<Task> {
   const userId = task.userId || 'local_user';
   const data = getLocalStudentData(userId);
   data.tasks = data.tasks.map((t) => (t.id === task.id ? task : t));
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return task;
 }
@@ -422,7 +439,91 @@ export async function apiDeleteTask(taskId: string, userId: string = 'local_user
 
   const data = getLocalStudentData(userId);
   data.tasks = data.tasks.filter((t) => t.id !== taskId);
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
+}
+
+// ----------------------------------------------------------------------------
+// Exam Operations
+// ----------------------------------------------------------------------------
+
+export async function apiGetExams(userId: string): Promise<Exam[]> {
+  try {
+    const res = await fetch(`${API_BASE}/exams/${userId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  return data.exams || [];
+}
+
+export async function apiAddExam(exam: Omit<Exam, 'id' | 'createdAt'>): Promise<Exam> {
+  try {
+    const res = await fetch(`${API_BASE}/exams`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(exam),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const userId = exam.userId || 'local_user';
+  const data = getLocalStudentData(userId);
+  if (!data.exams) data.exams = [];
+  const newExam: Exam = {
+    ...exam,
+    id: `exam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    createdAt: new Date().toISOString(),
+  };
+  data.exams.push(newExam);
+  if (!data.exams) data.exams = [];
+  saveLocalStudentData(userId, data);
+  return newExam;
+}
+
+export async function apiUpdateExam(exam: Exam): Promise<Exam> {
+  try {
+    const res = await fetch(`${API_BASE}/exams/${exam.id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(exam),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const userId = exam.userId || 'local_user';
+  const data = getLocalStudentData(userId);
+  if (!data.exams) data.exams = [];
+  data.exams = data.exams.map((e) => (e.id === exam.id ? exam : e));
+  if (!data.exams) data.exams = [];
+  saveLocalStudentData(userId, data);
+  return exam;
+}
+
+export async function apiDeleteExam(examId: string, userId: string = 'local_user'): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/exams/${examId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return;
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  if (data.exams) {
+    data.exams = data.exams.filter((e) => e.id !== examId);
+    saveLocalStudentData(userId, data);
+  }
 }
 
 export async function apiLogAttendance(
@@ -465,6 +566,7 @@ export async function apiLogAttendance(
     }
   }
 
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return {
     record,
@@ -514,6 +616,7 @@ export async function apiDeleteAttendanceRecord(
     }
   }
 
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return { deletedRecordId: recordId, updatedCourse: course };
 }
@@ -557,6 +660,7 @@ export async function apiUndoAttendance(userId: string, courseId: string): Promi
     }
   }
 
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return {
     deletedRecordId,
@@ -621,6 +725,7 @@ export async function apiRestoreStudentData(userId: string, data: StudentData): 
     // Fallback to local storage
   }
 
+  if (!data.exams) data.exams = [];
   saveLocalStudentData(userId, data);
   return { success: true, data };
 }

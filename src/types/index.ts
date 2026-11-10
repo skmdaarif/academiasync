@@ -56,6 +56,8 @@ export interface Course {
   attendanceGoal?: number; // Custom course-specific target
   totalClasses: number;
   attendedClasses: number;
+  baselineClassesHeld?: number; // Portal baseline prior to joining
+  baselineAttendedClasses?: number; // Portal baseline attended
   semesterNumber?: number;
 }
 
@@ -112,6 +114,34 @@ export interface AttendanceRecord {
   semesterNumber?: number;
 }
 
+export type ExamCategory = 'mtt' | 'ett' | 'ca' | 'viva' | 'other';
+export type ExamType = 'theory' | 'practical' | 'hybrid';
+
+export interface SyllabusUnit {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface Exam {
+  id: string;
+  userId?: string;
+  courseId?: string;
+  title: string;
+  examCategory: ExamCategory;
+  examType: ExamType;
+  examDate: string; // YYYY-MM-DD
+  startTime?: string; // "09:00"
+  endTime?: string;   // "12:00"
+  roomOrLab?: string;
+  maxMarks?: number;
+  marksObtained?: number;
+  syllabusUnits?: SyllabusUnit[];
+  semesterNumber?: number;
+  notes?: string;
+  createdAt?: string;
+}
+
 export type ThemeKey = 
   | 'dark-slate' 
   | 'cyberpunk' 
@@ -126,6 +156,7 @@ export interface StudentData {
   tasks: Task[];
   attendanceRecords: AttendanceRecord[];
   semesters?: AcademicSemester[];
+  exams?: Exam[];
   activeSemesterNumber?: number;
   theme: ThemeKey;
   activeView: 'dashboard' | 'timetable' | 'tasks' | 'attendance' | 'exams';

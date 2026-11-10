@@ -409,7 +409,14 @@ export function AttendanceCalculator({
                 {/* Progress Bar with Dual Markers */}
                 <div className="mt-4">
                   <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-1">
-                    <span>{course.attendedClasses} / {course.totalClasses} attended</span>
+                    <span>
+                      {(course.attendedClasses || 0) + (course.baselineAttendedClasses || 0)} / {(course.totalClasses || 0) + (course.baselineClassesHeld || 0)} attended
+                      {Boolean((course.baselineClassesHeld || 0) > 0) && (
+                        <span className="text-[10px] text-indigo-400 font-normal ml-1">
+                          (incl. {course.baselineClassesHeld} baseline)
+                        </span>
+                      )}
+                    </span>
                     <span className="text-amber-400">Target: {course.attendanceGoal || personalGoal}%</span>
                   </div>
                   <div className="w-full h-3 rounded-full bg-white/10 relative overflow-hidden">
@@ -434,7 +441,7 @@ export function AttendanceCalculator({
               <div className="mt-4 pt-3 border-t flex items-center justify-between gap-1.5 pl-2"
                 style={{ borderColor: 'rgba(255,255,255,0.06)' }}
               >
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-wrap">
                   <button
                     onClick={() => handleQuickAdd(course, 'present')}
                     className="p-1.5 rounded-lg text-xs font-bold text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/60 transition-colors flex items-center gap-1"
@@ -451,6 +458,14 @@ export function AttendanceCalculator({
                   >
                     <Minus className="w-3 h-3" />
                     Missed
+                  </button>
+
+                  <button
+                    onClick={() => handleQuickAdd(course, 'cancelled')}
+                    className="p-1.5 rounded-lg text-xs font-bold text-slate-300 bg-slate-800/80 border border-slate-600/30 hover:bg-slate-700/80 transition-colors flex items-center gap-1"
+                    title="Class Not Conducted / Holiday / Half-Day (0 safe bunk penalty)"
+                  >
+                    ⚪ Cancelled
                   </button>
 
                   <button
@@ -650,6 +665,62 @@ export function AttendanceCalculator({
                     }
                     className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
                   />
+                </div>
+              </div>
+
+              {/* Mid-Semester ERP Baseline Calibration */}
+              <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                    ERP Portal Baseline (Mid-Semester Calibration)
+                  </span>
+                  <span className="text-[10px] text-indigo-400 font-mono">Prior to AcademiaSync</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-tight">
+                  If you joined AcademiaSync mid-semester, enter the attendance counts from your university ERP portal. Your AcademiaSync logged sessions will seamlessly build on top!
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Portal Classes Held
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editingCourse.baselineClassesHeld ?? 0}
+                      onChange={(e) =>
+                        setEditingCourse({
+                          ...editingCourse,
+                          baselineClassesHeld: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })
+                      }
+                      className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Portal Classes Attended
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editingCourse.baselineAttendedClasses ?? 0}
+                      onChange={(e) =>
+                        setEditingCourse({
+                          ...editingCourse,
+                          baselineAttendedClasses: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })
+                      }
+                      className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-emerald-400 font-medium">
+                  Effective Total: {((editingCourse.attendedClasses || 0) + (editingCourse.baselineAttendedClasses || 0))} / {((editingCourse.totalClasses || 0) + (editingCourse.baselineClassesHeld || 0))} classes
                 </div>
               </div>
 

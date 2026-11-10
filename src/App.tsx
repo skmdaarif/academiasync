@@ -6,7 +6,8 @@ import {
   Task, 
   UserAccount, 
   ThemeKey, 
-  AttendanceStatus 
+  AttendanceStatus,
+  Exam
 } from './types';
 import { 
   apiFetchStudentData, 
@@ -19,6 +20,9 @@ import {
   apiAddTask, 
   apiUpdateTask, 
   apiDeleteTask, 
+  apiAddExam,
+  apiUpdateExam,
+  apiDeleteExam,
   apiLogAttendance, 
   apiUndoAttendance,
   apiDeleteAttendanceRecord,
@@ -353,6 +357,53 @@ export function App() {
     }
   };
 
+  // Exam Handlers
+  const handleAddExam = async (newExam: Omit<Exam, 'id' | 'createdAt'>) => {
+    if (!currentUser) return;
+    try {
+      const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
+      const created = await apiAddExam({ ...newExam, userId: currentUser.id, semesterNumber: activeSem });
+      setState((prev) => ({
+        ...prev,
+        exams: [...(prev.exams || []), created],
+      }));
+      showToast('Assessment scheduled successfully!', 'success');
+    } catch (err: any) {
+      console.error('Error adding exam:', err);
+      showToast('Failed to schedule exam', 'error');
+    }
+  };
+
+  const handleUpdateExam = async (exam: Exam) => {
+    if (!currentUser) return;
+    try {
+      const updated = await apiUpdateExam(exam);
+      setState((prev) => ({
+        ...prev,
+        exams: (prev.exams || []).map((e) => (e.id === updated.id ? updated : e)),
+      }));
+      showToast('Exam updated!', 'info');
+    } catch (err: any) {
+      console.error('Error updating exam:', err);
+      showToast('Failed to update exam', 'error');
+    }
+  };
+
+  const handleDeleteExam = async (examId: string) => {
+    if (!currentUser) return;
+    try {
+      await apiDeleteExam(examId, currentUser.id);
+      setState((prev) => ({
+        ...prev,
+        exams: (prev.exams || []).filter((e) => e.id !== examId),
+      }));
+      showToast('Exam removed', 'info');
+    } catch (err: any) {
+      console.error('Error deleting exam:', err);
+      showToast('Failed to delete exam', 'error');
+    }
+  };
+
   // Course Handlers
   const handleAddCourse = async (newCourse: Omit<Course, 'id' | 'totalClasses' | 'attendedClasses' | 'userId'>) => {
     try {
@@ -521,13 +572,46 @@ export function App() {
     const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
     const otherCourses = state.courses.filter((c) => (c.semesterNumber || 1) !== activeSem);
     const otherSlots = state.timeSlots.filter((s) => (s.semesterNumber || 1) !== activeSem);
-    const taggedCourses = newCourses.map((c) => ({ ...c, semesterNumber: activeSem }));
-    const taggedSlots = newSlots.map((s) => ({ ...s, semesterNumber: activeSem }));
+
+    // Code-based matching to prevent regenerating new IDs & preserving existing attendance records & baselines
+    const existingActiveCourses = state.courses.filter((c) => (c.semesterNumber || 1) === activeSem);
+    const existingCourseByCode = new Map(existingActiveCourses.map((c) => [c.code.trim().toUpperCase(), c]));
+    const idRemap = new Map<string, string>();
+
+    const finalizedCourses: Course[] = [];
+
+    for (const nc of newCourses) {
+      const codeKey = nc.code.trim().toUpperCase();
+      const existing = existingCourseByCode.get(codeKey);
+      if (existing) {
+        idRemap.set(nc.id, existing.id);
+        finalizedCourses.push({
+          ...existing,
+          name: nc.name || existing.name,
+          professor: nc.professor || existing.professor,
+          defaultRoom: nc.defaultRoom || existing.defaultRoom,
+          color: existing.color || nc.color,
+          credits: nc.credits || existing.credits,
+          semesterNumber: activeSem,
+        });
+      } else {
+        finalizedCourses.push({
+          ...nc,
+          semesterNumber: activeSem,
+        });
+      }
+    }
+
+    const finalizedSlots: TimeSlot[] = newSlots.map((s) => ({
+      ...s,
+      courseId: idRemap.get(s.courseId) || s.courseId,
+      semesterNumber: activeSem,
+    }));
 
     const mergedState: StudentData = {
       ...state,
-      courses: [...otherCourses, ...taggedCourses],
-      timeSlots: [...otherSlots, ...taggedSlots],
+      courses: [...otherCourses, ...finalizedCourses],
+      timeSlots: [...otherSlots, ...finalizedSlots],
     };
 
     setState(mergedState);
@@ -560,6 +644,7 @@ export function App() {
   const viewSlots = state.timeSlots.filter((s) => (s.semesterNumber || 1) === currentViewSemesterNumber);
   const viewTasks = state.tasks.filter((t) => (t.semesterNumber || 1) === currentViewSemesterNumber);
   const viewAttendance = state.attendanceRecords.filter((a) => (a.semesterNumber || 1) === currentViewSemesterNumber);
+  const viewExams = (state.exams || []).filter((e) => (e.semesterNumber || 1) === currentViewSemesterNumber);
 
   const viewState: StudentData = {
     ...state,
@@ -567,6 +652,7 @@ export function App() {
     timeSlots: viewSlots,
     tasks: viewTasks,
     attendanceRecords: viewAttendance,
+    exams: viewExams,
   };
 
   return (
@@ -839,6 +925,9 @@ export function App() {
               state={viewState}
               onOpenAddModal={() => setAddModalType('task')}
               onUpdateTask={handleUpdateTask}
+              onAddExam={handleAddExam}
+              onUpdateExam={handleUpdateExam}
+              onDeleteExam={handleDeleteExam}
             />
           </div>
         )}

@@ -124,8 +124,8 @@ export function calculateAttendance(
   collegeMinRequirement: number = 75,
   personalGoalPercentage?: number
 ): AttendanceAnalysis {
-  const total = course.totalClasses || 0;
-  const attended = course.attendedClasses || 0;
+  const total = (course.totalClasses || 0) + (course.baselineClassesHeld || 0);
+  const attended = (course.attendedClasses || 0) + (course.baselineAttendedClasses || 0);
 
   // Use course-specific goal if defined, otherwise personal goal (defaulting to college requirement if not set)
   const targetGoal = personalGoalPercentage !== undefined ? personalGoalPercentage : collegeMinRequirement;

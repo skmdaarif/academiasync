@@ -149,6 +149,26 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_semesters_user ON academic_semesters(user_id);
+
+  CREATE TABLE IF NOT EXISTS exams (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT REFERENCES courses(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    exam_category TEXT NOT NULL DEFAULT 'mtt',
+    exam_type TEXT NOT NULL DEFAULT 'theory',
+    exam_date TEXT NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    room_or_lab TEXT,
+    max_marks REAL,
+    marks_obtained REAL,
+    syllabus_units TEXT,
+    semester_number INTEGER DEFAULT 1,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_exams_user ON exams(user_id);
 `);
 
 // Safe Schema Column Migrations
@@ -166,12 +186,15 @@ function ensureColumn(table, column, definition) {
 
 ensureColumn('users', 'admission_type', "TEXT DEFAULT 'fresh'");
 ensureColumn('users', 'active_semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('users', 'semester_start_date', 'TEXT');
 ensureColumn('courses', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('courses', 'baseline_classes_held', 'INTEGER DEFAULT 0');
+ensureColumn('courses', 'baseline_attended_classes', 'INTEGER DEFAULT 0');
 ensureColumn('time_slots', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('tasks', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('attendance_records', 'semester_number', 'INTEGER DEFAULT 1');
 
-console.log('✅ SQLite relational schema, multi-semester tables & migrations verified.');
+console.log('✅ SQLite relational schema, multi-semester tables, exams & migrations verified.');
 
 // ----------------------------------------------------------------------------
 // MIDDLEWARES & AUTHENTICATION
@@ -233,7 +256,10 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   const courses = db.prepare(`
     SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
            credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
-           attended_classes as attendedClasses, COALESCE(semester_number, 1) as semesterNumber
+           attended_classes as attendedClasses,
+           COALESCE(baseline_classes_held, 0) as baselineClassesHeld,
+           COALESCE(baseline_attended_classes, 0) as baselineAttendedClasses,
+           COALESCE(semester_number, 1) as semesterNumber
     FROM courses
     WHERE user_id = ?
     ORDER BY created_at ASC
@@ -319,12 +345,38 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     }];
   }
 
+  const examsRaw = db.prepare(`
+    SELECT id, user_id as userId, course_id as courseId, title,
+           exam_category as examCategory, exam_type as examType,
+           exam_date as examDate, start_time as startTime, end_time as endTime,
+           room_or_lab as roomOrLab, max_marks as maxMarks,
+           marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+           COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
+    FROM exams
+    WHERE user_id = ?
+    ORDER BY exam_date ASC, start_time ASC
+  `).all(userId);
+
+  const exams = examsRaw.map((ex) => {
+    let syllabusUnits = [];
+    if (ex.syllabusUnitsRaw) {
+      try {
+        syllabusUnits = JSON.parse(ex.syllabusUnitsRaw);
+      } catch {
+        syllabusUnits = [];
+      }
+    }
+    const { syllabusUnitsRaw, ...rest } = ex;
+    return { ...rest, syllabusUnits };
+  });
+
   return {
     courses,
     timeSlots,
     tasks,
     attendanceRecords,
     semesters,
+    exams,
     activeSemesterNumber,
     theme: defaultTheme,
     activeView: 'dashboard',
@@ -800,6 +852,8 @@ app.post('/api/courses', requireAuth, (req, res) => {
       attendanceGoal,
       totalClasses,
       attendedClasses,
+      baselineClassesHeld,
+      baselineAttendedClasses,
       semesterNumber,
     } = req.body;
 
@@ -809,13 +863,16 @@ app.post('/api/courses', requireAuth, (req, res) => {
 
     const totalHeld = Math.max(0, parseInt(totalClasses, 10) || 0);
     const attended = Math.min(totalHeld, Math.max(0, parseInt(attendedClasses, 10) || 0));
+    const baseHeld = Math.max(0, parseInt(baselineClassesHeld, 10) || 0);
+    const baseAttended = Math.min(baseHeld, Math.max(0, parseInt(baselineAttendedClasses, 10) || 0));
     const courseId = crypto.randomUUID();
 
     db.prepare(`
       INSERT INTO courses (
         id, user_id, code, name, professor, default_room, color_hex,
-        credits, attendance_goal, total_classes_held, attended_classes, semester_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        credits, attendance_goal, total_classes_held, attended_classes,
+        baseline_classes_held, baseline_attended_classes, semester_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       courseId,
       effectiveUserId,
@@ -828,13 +885,18 @@ app.post('/api/courses', requireAuth, (req, res) => {
       attendanceGoal || 75,
       totalHeld,
       attended,
+      baseHeld,
+      baseAttended,
       semNumber
     );
 
     const created = db.prepare(`
       SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
              credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
-             attended_classes as attendedClasses, COALESCE(semester_number, 1) as semesterNumber
+             attended_classes as attendedClasses,
+             COALESCE(baseline_classes_held, 0) as baselineClassesHeld,
+             COALESCE(baseline_attended_classes, 0) as baselineAttendedClasses,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM courses WHERE id = ?
     `).get(courseId);
 
@@ -848,7 +910,19 @@ app.post('/api/courses', requireAuth, (req, res) => {
 app.put('/api/courses/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    const { code, name, professor, defaultRoom, color, credits, attendanceGoal, totalClasses, attendedClasses } = req.body;
+    const {
+      code,
+      name,
+      professor,
+      defaultRoom,
+      color,
+      credits,
+      attendanceGoal,
+      totalClasses,
+      attendedClasses,
+      baselineClassesHeld,
+      baselineAttendedClasses,
+    } = req.body;
 
     const existing = db.prepare('SELECT * FROM courses WHERE id = ? AND user_id = ?').get(id, req.user.id);
     if (!existing) {
@@ -865,7 +939,9 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
           credits = COALESCE(?, credits),
           attendance_goal = COALESCE(?, attendance_goal),
           total_classes_held = COALESCE(?, total_classes_held),
-          attended_classes = COALESCE(?, attended_classes)
+          attended_classes = COALESCE(?, attended_classes),
+          baseline_classes_held = COALESCE(?, baseline_classes_held),
+          baseline_attended_classes = COALESCE(?, baseline_attended_classes)
       WHERE id = ? AND user_id = ?
     `).run(
       code || null,
@@ -877,6 +953,8 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
       attendanceGoal !== undefined ? attendanceGoal : null,
       totalClasses !== undefined ? totalClasses : null,
       attendedClasses !== undefined ? attendedClasses : null,
+      baselineClassesHeld !== undefined ? baselineClassesHeld : null,
+      baselineAttendedClasses !== undefined ? baselineAttendedClasses : null,
       id,
       req.user.id
     );
@@ -884,7 +962,10 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
     const updated = db.prepare(`
       SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
              credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
-             attended_classes as attendedClasses
+             attended_classes as attendedClasses,
+             COALESCE(baseline_classes_held, 0) as baselineClassesHeld,
+             COALESCE(baseline_attended_classes, 0) as baselineAttendedClasses,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM courses WHERE id = ?
     `).get(id);
 
@@ -1298,6 +1379,225 @@ app.post('/api/attendance/undo', requireAuth, (req, res) => {
   }
 });
 
+// ----------------------------------------------------------------------------
+// EXAMS & ASSESSMENTS CRUD
+// ----------------------------------------------------------------------------
+
+// Fetch Exams for a Student
+app.get('/api/exams/:userId', requireAuth, (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (req.user.id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
+
+    const examsRaw = db.prepare(`
+      SELECT id, user_id as userId, course_id as courseId, title,
+             exam_category as examCategory, exam_type as examType,
+             exam_date as examDate, start_time as startTime, end_time as endTime,
+             room_or_lab as roomOrLab, max_marks as maxMarks,
+             marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+             COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
+      FROM exams
+      WHERE user_id = ?
+      ORDER BY exam_date ASC, start_time ASC
+    `).all(userId);
+
+    const exams = examsRaw.map((ex) => {
+      let syllabusUnits = [];
+      if (ex.syllabusUnitsRaw) {
+        try {
+          syllabusUnits = JSON.parse(ex.syllabusUnitsRaw);
+        } catch {
+          syllabusUnits = [];
+        }
+      }
+      const { syllabusUnitsRaw, ...rest } = ex;
+      return { ...rest, syllabusUnits };
+    });
+
+    res.json(exams);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add Exam
+app.post('/api/exams', requireAuth, (req, res) => {
+  try {
+    const {
+      userId,
+      courseId,
+      title,
+      examCategory,
+      examType,
+      examDate,
+      startTime,
+      endTime,
+      roomOrLab,
+      maxMarks,
+      marksObtained,
+      syllabusUnits,
+      semesterNumber,
+      notes,
+    } = req.body;
+
+    const effectiveUserId = req.user.id || userId;
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
+    const examId = crypto.randomUUID();
+
+    const syllabusJson = Array.isArray(syllabusUnits) ? JSON.stringify(syllabusUnits) : null;
+
+    db.prepare(`
+      INSERT INTO exams (
+        id, user_id, course_id, title, exam_category, exam_type, exam_date,
+        start_time, end_time, room_or_lab, max_marks, marks_obtained,
+        syllabus_units, semester_number, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      examId,
+      effectiveUserId,
+      courseId || null,
+      title.trim(),
+      examCategory || 'mtt',
+      examType || 'theory',
+      examDate,
+      startTime || null,
+      endTime || null,
+      roomOrLab || null,
+      maxMarks !== undefined && maxMarks !== '' ? Number(maxMarks) : null,
+      marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : null,
+      syllabusJson,
+      semNumber,
+      notes || null
+    );
+
+    const created = db.prepare(`
+      SELECT id, user_id as userId, course_id as courseId, title,
+             exam_category as examCategory, exam_type as examType,
+             exam_date as examDate, start_time as startTime, end_time as endTime,
+             room_or_lab as roomOrLab, max_marks as maxMarks,
+             marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+             COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
+      FROM exams WHERE id = ?
+    `).get(examId);
+
+    let parsedUnits = [];
+    if (created.syllabusUnitsRaw) {
+      try {
+        parsedUnits = JSON.parse(created.syllabusUnitsRaw);
+      } catch {
+        parsedUnits = [];
+      }
+    }
+    delete created.syllabusUnitsRaw;
+    created.syllabusUnits = parsedUnits;
+
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Exam
+app.put('/api/exams/:id', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      courseId,
+      title,
+      examCategory,
+      examType,
+      examDate,
+      startTime,
+      endTime,
+      roomOrLab,
+      maxMarks,
+      marksObtained,
+      syllabusUnits,
+      notes,
+    } = req.body;
+
+    const existing = db.prepare('SELECT * FROM exams WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Exam not found or access denied.' });
+    }
+
+    const syllabusJson = Array.isArray(syllabusUnits)
+      ? JSON.stringify(syllabusUnits)
+      : existing.syllabus_units;
+
+    db.prepare(`
+      UPDATE exams
+      SET course_id = ?,
+          title = COALESCE(?, title),
+          exam_category = COALESCE(?, exam_category),
+          exam_type = COALESCE(?, exam_type),
+          exam_date = COALESCE(?, exam_date),
+          start_time = ?,
+          end_time = ?,
+          room_or_lab = ?,
+          max_marks = ?,
+          marks_obtained = ?,
+          syllabus_units = ?,
+          notes = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      courseId !== undefined ? courseId : existing.course_id,
+      title || null,
+      examCategory || null,
+      examType || null,
+      examDate || null,
+      startTime !== undefined ? startTime : existing.start_time,
+      endTime !== undefined ? endTime : existing.end_time,
+      roomOrLab !== undefined ? roomOrLab : existing.room_or_lab,
+      maxMarks !== undefined && maxMarks !== '' ? Number(maxMarks) : existing.max_marks,
+      marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : existing.marks_obtained,
+      syllabusJson,
+      notes !== undefined ? notes : existing.notes,
+      id,
+      req.user.id
+    );
+
+    const updated = db.prepare(`
+      SELECT id, user_id as userId, course_id as courseId, title,
+             exam_category as examCategory, exam_type as examType,
+             exam_date as examDate, start_time as startTime, end_time as endTime,
+             room_or_lab as roomOrLab, max_marks as maxMarks,
+             marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+             COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
+      FROM exams WHERE id = ?
+    `).get(id);
+
+    let parsedUnits = [];
+    if (updated.syllabusUnitsRaw) {
+      try {
+        parsedUnits = JSON.parse(updated.syllabusUnitsRaw);
+      } catch {
+        parsedUnits = [];
+      }
+    }
+    delete updated.syllabusUnitsRaw;
+    updated.syllabusUnits = parsedUnits;
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Exam
+app.delete('/api/exams/:id', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare('DELETE FROM exams WHERE id = ? AND user_id = ?').run(id, req.user.id);
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Update User Profile
 app.put('/api/users/profile', requireAuth, (req, res) => {
   try {
@@ -1579,7 +1879,41 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
         }
       }
 
-      // 7. Update user theme preference & active semester if present
+      // 7. Insert Exams
+      if (Array.isArray(data.exams) && data.exams.length > 0) {
+        db.prepare('DELETE FROM exams WHERE user_id = ?').run(userId);
+        const insertEx = db.prepare(`
+          INSERT INTO exams (
+            id, user_id, course_id, title, exam_category, exam_type, exam_date,
+            start_time, end_time, room_or_lab, max_marks, marks_obtained,
+            syllabus_units, semester_number, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const ex of data.exams) {
+          const targetCourseId = ex.courseId ? courseIdMap.get(ex.courseId) || ex.courseId : null;
+          const exId = ex.id && ex.id.length > 5 ? ex.id : crypto.randomUUID();
+          insertEx.run(
+            exId,
+            userId,
+            targetCourseId,
+            ex.title || 'Untitled Exam',
+            ex.examCategory || 'mtt',
+            ex.examType || 'theory',
+            ex.examDate || new Date().toISOString().split('T')[0],
+            ex.startTime || null,
+            ex.endTime || null,
+            ex.roomOrLab || null,
+            ex.maxMarks !== undefined && ex.maxMarks !== '' ? Number(ex.maxMarks) : null,
+            ex.marksObtained !== undefined && ex.marksObtained !== '' ? Number(ex.marksObtained) : null,
+            Array.isArray(ex.syllabusUnits) ? JSON.stringify(ex.syllabusUnits) : null,
+            Number(ex.semesterNumber) || 1,
+            ex.notes || null
+          );
+        }
+      }
+
+      // 8. Update user theme preference & active semester if present
       if (data.theme) {
         db.prepare('UPDATE users SET theme_preference = ? WHERE id = ?').run(data.theme, userId);
       }

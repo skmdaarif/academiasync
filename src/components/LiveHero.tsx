@@ -86,6 +86,13 @@ export function LiveHero({
     ? state.attendanceRecords.find((r) => r.courseId === status.currentCourse!.id && r.date === todayStr)
     : null;
 
+  const isBeforeTermStart = user.semesterStartDate && todayStr < user.semesterStartDate;
+  const daysUntilTermStart = user.semesterStartDate
+    ? Math.ceil((new Date(user.semesterStartDate).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  const todayExams = (state.exams || []).filter((ex) => ex.examDate === todayStr);
+
   return (
     <section className="mb-8">
       {/* Welcome Banner */}
@@ -124,6 +131,67 @@ export function LiveHero({
           </div>
         </div>
       </div>
+
+      {/* Classes Commencement Countdown Banner (If term hasn't started yet) */}
+      {isBeforeTermStart && (
+        <div className="mb-5 p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+              <CalendarCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                Classes Start in {daysUntilTermStart} Day{daysUntilTermStart === 1 ? '' : 's'}
+                <span className="text-[10px] font-mono font-normal px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300">
+                  {user.semesterStartDate}
+                </span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                Timetable and attendance tracking are calibrated and ready to activate on Day 1.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live University Exam Alerts Banner */}
+      {todayExams.map((ex) => (
+        <div 
+          key={ex.id}
+          onClick={() => onViewChange('exams')}
+          className="mb-5 p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl cursor-pointer hover:bg-rose-950/60 transition-all"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 font-black animate-pulse">
+              🚨
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-rose-500/30 text-rose-300 border border-rose-500/30">
+                  {ex.examCategory.toUpperCase()} {ex.examType.toUpperCase()} EXAM TODAY
+                </span>
+                {ex.startTime && (
+                  <span className="text-xs font-mono font-bold text-amber-400">
+                    🕒 {formatTime12h(ex.startTime)} {ex.endTime ? `- ${formatTime12h(ex.endTime)}` : ''}
+                  </span>
+                )}
+              </div>
+              <h4 className="text-base font-extrabold text-white mt-0.5">
+                {ex.title}
+              </h4>
+              {ex.roomOrLab && (
+                <p className="text-xs text-rose-200 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                  Venue / Lab: {ex.roomOrLab}
+                </p>
+              )}
+            </div>
+          </div>
+          <button className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500 text-white shadow hover:bg-rose-600 transition-all self-end sm:self-center">
+            Open Exam Hub →
+          </button>
+        </div>
+      ))}
 
       {/* Main Grid: Live Class Card (Left) & Upcoming / Action Cards (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -270,15 +338,17 @@ export function LiveHero({
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {activeClassLoggedToday ? (
                   <span className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border ${
                     activeClassLoggedToday.status === 'present'
                       ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30'
+                      : activeClassLoggedToday.status === 'cancelled'
+                      ? 'bg-slate-800/80 text-slate-300 border-slate-600/40'
                       : 'bg-rose-950/40 text-rose-300 border-rose-500/30'
                   }`}>
                     <CheckCircle2 className="w-4 h-4" />
-                    Today: {activeClassLoggedToday.status === 'present' ? 'Present ✓' : 'Missed ✕'}
+                    Today: {activeClassLoggedToday.status === 'present' ? 'Present ✓' : activeClassLoggedToday.status === 'cancelled' ? 'Not Conducted ⚪' : 'Missed ✕'}
                   </span>
                 ) : (
                   <>
@@ -295,6 +365,13 @@ export function LiveHero({
                     >
                       <XCircle className="w-4 h-4" />
                       Missed / Bunk
+                    </button>
+                    <button
+                      onClick={() => onMarkAttendance(status.currentCourse!.id, 'cancelled')}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/10 hover:bg-slate-700/60 hover:text-white transition-all"
+                      title="Class not conducted due to half day, holiday, or faculty leave (0 safe bunk penalty)"
+                    >
+                      ⚪ Cancelled
                     </button>
                   </>
                 )}
