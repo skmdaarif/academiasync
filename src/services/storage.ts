@@ -9,6 +9,8 @@ export function getBlankStudentData(): StudentData {
     timeSlots: [],
     tasks: [],
     attendanceRecords: [],
+    semesters: [],
+    activeSemesterNumber: 1,
     theme: 'dark-slate',
     activeView: 'dashboard',
   };

@@ -133,9 +133,45 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_attendance_user_course ON attendance_records(user_id, course_id);
   CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_records(log_date);
+
+  CREATE TABLE IF NOT EXISTS academic_semesters (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    semester_number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    start_date TEXT,
+    end_date TEXT,
+    final_attendance_pct REAL,
+    credits_earned INTEGER DEFAULT 0,
+    sgpa REAL,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_semesters_user ON academic_semesters(user_id);
 `);
 
-console.log('✅ SQLite relational schema and indexes verified.');
+// Safe Schema Column Migrations
+function ensureColumn(table, column, definition) {
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!columns.some(col => col.name === column)) {
+      db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+      console.log(`✨ Migrated ${table}: added column ${column}`);
+    }
+  } catch (err) {
+    console.error(`Migration check warning on ${table}.${column}:`, err.message);
+  }
+}
+
+ensureColumn('users', 'admission_type', "TEXT DEFAULT 'fresh'");
+ensureColumn('users', 'active_semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('courses', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('time_slots', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('tasks', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('attendance_records', 'semester_number', 'INTEGER DEFAULT 1');
+
+console.log('✅ SQLite relational schema, multi-semester tables & migrations verified.');
 
 // ----------------------------------------------------------------------------
 // MIDDLEWARES & AUTHENTICATION
@@ -197,7 +233,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   const courses = db.prepare(`
     SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
            credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
-           attended_classes as attendedClasses
+           attended_classes as attendedClasses, COALESCE(semester_number, 1) as semesterNumber
     FROM courses
     WHERE user_id = ?
     ORDER BY created_at ASC
@@ -206,7 +242,8 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   const timeSlots = db.prepare(`
     SELECT id, course_id as courseId, day_of_week as day,
            start_time as startTime, end_time as endTime, room,
-           slot_type as type, notes, meeting_link as meetingLink
+           slot_type as type, notes, meeting_link as meetingLink,
+           COALESCE(semester_number, 1) as semesterNumber
     FROM time_slots
     WHERE user_id = ?
     ORDER BY start_time ASC
@@ -215,7 +252,8 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   const tasksRaw = db.prepare(`
     SELECT id, course_id as courseId, title, description,
            due_date as dueDate, due_time as dueTime, priority, status,
-           category, created_at as createdAt
+           category, created_at as createdAt,
+           COALESCE(semester_number, 1) as semesterNumber
     FROM tasks
     WHERE user_id = ?
     ORDER BY due_date ASC
@@ -243,17 +281,51 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   }));
 
   const attendanceRecords = db.prepare(`
-    SELECT id, course_id as courseId, log_date as date, status, note, time_slot_id as slotId
+    SELECT id, course_id as courseId, log_date as date, status, note, time_slot_id as slotId,
+           COALESCE(semester_number, 1) as semesterNumber
     FROM attendance_records
     WHERE user_id = ?
     ORDER BY created_at DESC
   `).all(userId);
+
+  const userRow = db.prepare('SELECT active_semester_number, semester FROM users WHERE id = ?').get(userId);
+  const activeSemesterNumber = userRow?.active_semester_number || 1;
+
+  let semesters = db.prepare(`
+    SELECT id, user_id as userId, semester_number as semesterNumber,
+           title, status, start_date as startDate, end_date as endDate,
+           final_attendance_pct as finalAttendancePct, credits_earned as creditsEarned,
+           sgpa, notes, created_at as createdAt
+    FROM academic_semesters
+    WHERE user_id = ?
+    ORDER BY semester_number ASC
+  `).all(userId);
+
+  // Auto-synthesize active semester for existing users with no semester records
+  if (semesters.length === 0) {
+    const semTitle = userRow?.semester || `Semester ${activeSemesterNumber}`;
+    const autoSemId = crypto.randomUUID();
+    db.prepare(`
+      INSERT INTO academic_semesters (id, user_id, semester_number, title, status, credits_earned)
+      VALUES (?, ?, ?, ?, 'active', 0)
+    `).run(autoSemId, userId, activeSemesterNumber, semTitle);
+    semesters = [{
+      id: autoSemId,
+      userId,
+      semesterNumber: activeSemesterNumber,
+      title: semTitle,
+      status: 'active',
+      creditsEarned: 0,
+    }];
+  }
 
   return {
     courses,
     timeSlots,
     tasks,
     attendanceRecords,
+    semesters,
+    activeSemesterNumber,
     theme: defaultTheme,
     activeView: 'dashboard',
   };
@@ -277,6 +349,8 @@ app.post('/api/auth/register', async (req, res) => {
       semester,
       collegeMinAttendance,
       personalGoalAttendance,
+      admissionType,
+      backfilledSemesters,
     } = req.body;
 
     if (!email || !password || !name) {
@@ -313,31 +387,74 @@ app.post('/api/auth/register', async (req, res) => {
     let persGoal = Number(personalGoalAttendance) || minAtt;
     if (persGoal < minAtt) persGoal = minAtt;
 
+    const parsedSem = parseInt(String(semester).replace(/\D/g, ''), 10);
+    const activeSemNumber = !isNaN(parsedSem) && parsedSem > 0 ? parsedSem : 1;
+    const finalAdmissionType = admissionType || (activeSemNumber > 1 ? 'continuing' : 'fresh');
+
     const userId = crypto.randomUUID();
 
-    db.prepare(`
-      INSERT INTO users (
-        id, full_name, email, password_hash, country, college_name,
-        branch, degree_type, semester, total_semesters,
-        college_min_attendance, personal_attendance_goal, target_attendance_percentage,
-        theme_preference
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      userId,
-      name.trim(),
-      normalizedEmail,
-      passwordHash,
-      country || 'India',
-      collegeName || 'National Institute of Technology',
-      branch || 'Computer Science & Engineering',
-      degreeType || 'B.Tech / B.E.',
-      semester || 'Semester 5',
-      8,
-      minAtt,
-      persGoal,
-      minAtt,
-      'dark-slate'
-    );
+    const registerTx = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO users (
+          id, full_name, email, password_hash, country, college_name,
+          branch, degree_type, semester, total_semesters,
+          college_min_attendance, personal_attendance_goal, target_attendance_percentage,
+          theme_preference, admission_type, active_semester_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        userId,
+        name.trim(),
+        normalizedEmail,
+        passwordHash,
+        country || 'India',
+        collegeName || 'National Institute of Technology',
+        branch || 'Computer Science & Engineering',
+        degreeType || 'B.Tech / B.E.',
+        semester || `Semester ${activeSemNumber}`,
+        8,
+        minAtt,
+        persGoal,
+        minAtt,
+        'dark-slate',
+        finalAdmissionType,
+        activeSemNumber
+      );
+
+      // Create Active Semester record
+      db.prepare(`
+        INSERT INTO academic_semesters (
+          id, user_id, semester_number, title, status, start_date, credits_earned
+        ) VALUES (?, ?, ?, ?, 'active', date('now'), 0)
+      `).run(
+        crypto.randomUUID(),
+        userId,
+        activeSemNumber,
+        semester || `Semester ${activeSemNumber}`
+      );
+
+      // Insert any Backfilled Past Semesters for continuing students
+      if (Array.isArray(backfilledSemesters) && backfilledSemesters.length > 0) {
+        const insertSem = db.prepare(`
+          INSERT INTO academic_semesters (
+            id, user_id, semester_number, title, status, final_attendance_pct, credits_earned, sgpa, notes
+          ) VALUES (?, ?, ?, ?, 'backfilled', ?, ?, ?, ?)
+        `);
+        for (const b of backfilledSemesters) {
+          insertSem.run(
+            crypto.randomUUID(),
+            userId,
+            b.semesterNumber,
+            b.title || `Semester ${b.semesterNumber}`,
+            b.finalAttendancePct ?? null,
+            b.creditsEarned ?? 0,
+            b.sgpa ?? null,
+            b.notes || null
+          );
+        }
+      }
+    });
+
+    registerTx();
 
     const user = {
       id: userId,
@@ -347,27 +464,23 @@ app.post('/api/auth/register', async (req, res) => {
       collegeName: collegeName || 'National Institute of Technology',
       branch: branch || 'Computer Science & Engineering',
       degreeType: degreeType || 'B.Tech / B.E.',
-      semester: semester || 'Semester 5',
+      semester: semester || `Semester ${activeSemNumber}`,
       totalSemesters: 8,
+      admissionType: finalAdmissionType,
+      activeSemesterNumber: activeSemNumber,
       collegeMinAttendance: minAtt,
       personalGoalAttendance: persGoal,
       targetAttendance: minAtt,
       theme: 'dark-slate',
     };
 
+    const data = fetchFullStudentData(userId, user.theme);
     const token = generateToken(user);
     res.status(201).json({
       success: true,
       token,
       user,
-      data: {
-        courses: [],
-        timeSlots: [],
-        tasks: [],
-        attendanceRecords: [],
-        theme: user.theme,
-        activeView: 'dashboard',
-      },
+      data,
     });
   } catch (err) {
     console.error('Registration Error:', err);
@@ -388,7 +501,7 @@ app.post('/api/auth/login', async (req, res) => {
       SELECT id, full_name, email, password_hash, country, college_name,
              branch, degree_type, semester, total_semesters,
              college_min_attendance, personal_attendance_goal, target_attendance_percentage,
-             theme_preference, semester_start_date
+             theme_preference, semester_start_date, admission_type, active_semester_number
       FROM users WHERE LOWER(email) = ?
     `).get(normalizedEmail);
 
@@ -403,6 +516,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const collegeMin = Number(userRow.college_min_attendance || userRow.target_attendance_percentage || 75);
     const personalGoal = Number(userRow.personal_attendance_goal || collegeMin);
+    const activeSemNumber = userRow.active_semester_number || parseInt(String(userRow.semester).replace(/\D/g, ''), 10) || 1;
 
     const user = {
       id: userRow.id,
@@ -412,8 +526,10 @@ app.post('/api/auth/login', async (req, res) => {
       collegeName: userRow.college_name,
       branch: userRow.branch,
       degreeType: userRow.degree_type,
-      semester: userRow.semester,
-      totalSemesters: userRow.total_semesters,
+      semester: userRow.semester || `Semester ${activeSemNumber}`,
+      totalSemesters: userRow.total_semesters || 8,
+      admissionType: userRow.admission_type || 'fresh',
+      activeSemesterNumber: activeSemNumber,
       semesterStartDate: userRow.semester_start_date || undefined,
       collegeMinAttendance: collegeMin,
       personalGoalAttendance: personalGoal,
@@ -456,6 +572,220 @@ app.get('/api/data/:userId', requireAuth, (req, res) => {
   }
 });
 
+// ----------------------------------------------------------------------------
+// ACADEMIC SEMESTER & VAULT ENDPOINTS
+// ----------------------------------------------------------------------------
+
+// Fetch All Semesters for a Student
+app.get('/api/semesters/:userId', requireAuth, (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (req.user.id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
+    const semesters = db.prepare(`
+      SELECT id, user_id as userId, semester_number as semesterNumber,
+             title, status, start_date as startDate, end_date as endDate,
+             final_attendance_pct as finalAttendancePct, credits_earned as creditsEarned,
+             sgpa, notes, created_at as createdAt
+      FROM academic_semesters
+      WHERE user_id = ?
+      ORDER BY semester_number ASC
+    `).all(userId);
+    res.json(semesters);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Backfill or Update Past Semesters
+app.post('/api/semesters/backfill', requireAuth, (req, res) => {
+  try {
+    const { userId, semesters } = req.body;
+    const effectiveUserId = req.user.id || userId;
+    if (req.user.id !== effectiveUserId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
+    if (!Array.isArray(semesters)) {
+      return res.status(400).json({ error: 'Semesters array is required.' });
+    }
+
+    const backfillTx = db.transaction(() => {
+      for (const sem of semesters) {
+        const existing = db.prepare(`
+          SELECT id FROM academic_semesters WHERE user_id = ? AND semester_number = ?
+        `).get(effectiveUserId, sem.semesterNumber);
+
+        if (existing) {
+          db.prepare(`
+            UPDATE academic_semesters
+            SET title = COALESCE(?, title),
+                final_attendance_pct = ?,
+                credits_earned = ?,
+                sgpa = ?,
+                notes = ?,
+                status = COALESCE(?, status)
+            WHERE id = ?
+          `).run(
+            sem.title || `Semester ${sem.semesterNumber}`,
+            sem.finalAttendancePct !== undefined ? sem.finalAttendancePct : null,
+            sem.creditsEarned !== undefined ? sem.creditsEarned : 0,
+            sem.sgpa !== undefined ? sem.sgpa : null,
+            sem.notes !== undefined ? sem.notes : null,
+            sem.status || 'backfilled',
+            existing.id
+          );
+        } else {
+          db.prepare(`
+            INSERT INTO academic_semesters (
+              id, user_id, semester_number, title, status, final_attendance_pct, credits_earned, sgpa, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            crypto.randomUUID(),
+            effectiveUserId,
+            sem.semesterNumber,
+            sem.title || `Semester ${sem.semesterNumber}`,
+            sem.status || 'backfilled',
+            sem.finalAttendancePct !== undefined ? sem.finalAttendancePct : null,
+            sem.creditsEarned !== undefined ? sem.creditsEarned : 0,
+            sem.sgpa !== undefined ? sem.sgpa : null,
+            sem.notes || null
+          );
+        }
+      }
+    });
+
+    backfillTx();
+
+    const updatedList = db.prepare(`
+      SELECT id, user_id as userId, semester_number as semesterNumber,
+             title, status, start_date as startDate, end_date as endDate,
+             final_attendance_pct as finalAttendancePct, credits_earned as creditsEarned,
+             sgpa, notes, created_at as createdAt
+      FROM academic_semesters
+      WHERE user_id = ?
+      ORDER BY semester_number ASC
+    `).all(effectiveUserId);
+
+    res.json({ success: true, semesters: updatedList });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Promote Student to Next Semester
+app.post('/api/semesters/promote', requireAuth, (req, res) => {
+  try {
+    const { userId, nextSemesterNumber, currentSemSummary } = req.body;
+    const effectiveUserId = req.user.id || userId;
+    if (req.user.id !== effectiveUserId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
+
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const currSemNumber = userRow?.active_semester_number || 1;
+    const nextSem = nextSemesterNumber || (currSemNumber + 1);
+
+    const promoteTx = db.transaction(() => {
+      // 1. Archive current active semester
+      const existingActive = db.prepare(`
+        SELECT id FROM academic_semesters WHERE user_id = ? AND semester_number = ?
+      `).get(effectiveUserId, currSemNumber);
+
+      const today = new Date().toISOString().split('T')[0];
+
+      if (existingActive) {
+        db.prepare(`
+          UPDATE academic_semesters
+          SET status = 'archived',
+              end_date = ?,
+              final_attendance_pct = ?,
+              credits_earned = ?,
+              sgpa = ?,
+              notes = ?
+          WHERE id = ?
+        `).run(
+          today,
+          currentSemSummary?.finalAttendancePct !== undefined ? currentSemSummary.finalAttendancePct : null,
+          currentSemSummary?.creditsEarned !== undefined ? currentSemSummary.creditsEarned : 0,
+          currentSemSummary?.sgpa !== undefined ? currentSemSummary.sgpa : null,
+          currentSemSummary?.notes || null,
+          existingActive.id
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO academic_semesters (
+            id, user_id, semester_number, title, status, end_date, final_attendance_pct, credits_earned, sgpa, notes
+          ) VALUES (?, ?, ?, ?, 'archived', ?, ?, ?, ?, ?)
+        `).run(
+          crypto.randomUUID(),
+          effectiveUserId,
+          currSemNumber,
+          `Semester ${currSemNumber}`,
+          today,
+          currentSemSummary?.finalAttendancePct !== undefined ? currentSemSummary.finalAttendancePct : null,
+          currentSemSummary?.creditsEarned !== undefined ? currentSemSummary.creditsEarned : 0,
+          currentSemSummary?.sgpa !== undefined ? currentSemSummary.sgpa : null,
+          currentSemSummary?.notes || null
+        );
+      }
+
+      // 2. Create or activate new semester
+      const existingNext = db.prepare(`
+        SELECT id FROM academic_semesters WHERE user_id = ? AND semester_number = ?
+      `).get(effectiveUserId, nextSem);
+
+      if (existingNext) {
+        db.prepare(`
+          UPDATE academic_semesters
+          SET status = 'active', start_date = ?
+          WHERE id = ?
+        `).run(today, existingNext.id);
+      } else {
+        db.prepare(`
+          INSERT INTO academic_semesters (
+            id, user_id, semester_number, title, status, start_date, credits_earned
+          ) VALUES (?, ?, ?, ?, 'active', ?, 0)
+        `).run(
+          crypto.randomUUID(),
+          effectiveUserId,
+          nextSem,
+          `Semester ${nextSem}`,
+          today
+        );
+      }
+
+      // 3. Update user profile to new active semester
+      db.prepare(`
+        UPDATE users
+        SET active_semester_number = ?,
+            semester = ?
+        WHERE id = ?
+      `).run(nextSem, `Semester ${nextSem}`, effectiveUserId);
+    });
+
+    promoteTx();
+
+    const fullData = fetchFullStudentData(effectiveUserId);
+    const updatedUser = db.prepare(`
+      SELECT id, full_name as name, email, country, college_name as collegeName,
+             branch, degree_type as degreeType, semester, total_semesters as totalSemesters,
+             active_semester_number as activeSemesterNumber, admission_type as admissionType,
+             semester_start_date as semesterStartDate, college_min_attendance as collegeMinAttendance,
+             personal_attendance_goal as personalGoalAttendance, theme_preference as theme
+      FROM users WHERE id = ?
+    `).get(effectiveUserId);
+
+    res.json({
+      success: true,
+      user: updatedUser,
+      data: fullData,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Add Course
 app.post('/api/courses', requireAuth, (req, res) => {
   try {
@@ -470,9 +800,13 @@ app.post('/api/courses', requireAuth, (req, res) => {
       attendanceGoal,
       totalClasses,
       attendedClasses,
+      semesterNumber,
     } = req.body;
 
     const effectiveUserId = req.user.id || userId;
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
+
     const totalHeld = Math.max(0, parseInt(totalClasses, 10) || 0);
     const attended = Math.min(totalHeld, Math.max(0, parseInt(attendedClasses, 10) || 0));
     const courseId = crypto.randomUUID();
@@ -480,8 +814,8 @@ app.post('/api/courses', requireAuth, (req, res) => {
     db.prepare(`
       INSERT INTO courses (
         id, user_id, code, name, professor, default_room, color_hex,
-        credits, attendance_goal, total_classes_held, attended_classes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        credits, attendance_goal, total_classes_held, attended_classes, semester_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       courseId,
       effectiveUserId,
@@ -493,13 +827,14 @@ app.post('/api/courses', requireAuth, (req, res) => {
       credits || 3,
       attendanceGoal || 75,
       totalHeld,
-      attended
+      attended,
+      semNumber
     );
 
     const created = db.prepare(`
       SELECT id, code, name, professor, default_room as defaultRoom, color_hex as color,
              credits, attendance_goal as attendanceGoal, total_classes_held as totalClasses,
-             attended_classes as attendedClasses
+             attended_classes as attendedClasses, COALESCE(semester_number, 1) as semesterNumber
       FROM courses WHERE id = ?
     `).get(courseId);
 
@@ -573,14 +908,16 @@ app.delete('/api/courses/:id', requireAuth, (req, res) => {
 // Add Time Slot
 app.post('/api/slots', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, day, startTime, endTime, room, type, notes } = req.body;
+    const { userId, courseId, day, startTime, endTime, room, type, notes, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
     const slotId = crypto.randomUUID();
 
     db.prepare(`
       INSERT INTO time_slots (
-        id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes, semester_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       slotId,
       effectiveUserId,
@@ -590,13 +927,14 @@ app.post('/api/slots', requireAuth, (req, res) => {
       endTime,
       room || null,
       type || 'Lecture',
-      notes || null
+      notes || null,
+      semNumber
     );
 
     const created = db.prepare(`
       SELECT id, course_id as courseId, day_of_week as day,
              start_time as startTime, end_time as endTime, room,
-             slot_type as type, notes
+             slot_type as type, notes, COALESCE(semester_number, 1) as semesterNumber
       FROM time_slots WHERE id = ?
     `).get(slotId);
 
@@ -666,16 +1004,18 @@ app.delete('/api/slots/:id', requireAuth, (req, res) => {
 // Add Task (Atomic Transaction)
 app.post('/api/tasks', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
+    const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, subtasks, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
     const taskId = crypto.randomUUID();
 
     const insertTx = db.transaction(() => {
       db.prepare(`
         INSERT INTO tasks (
           id, user_id, course_id, title, description, due_date, due_time,
-          priority, status, category
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          priority, status, category, semester_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         taskId,
         effectiveUserId,
@@ -686,7 +1026,8 @@ app.post('/api/tasks', requireAuth, (req, res) => {
         dueTime || '23:59',
         priority || 'medium',
         status || 'todo',
-        category || 'assignment'
+        category || 'assignment',
+        semNumber
       );
 
       const createdSubtasks = [];
@@ -710,7 +1051,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
     const createdTask = db.prepare(`
       SELECT id, course_id as courseId, title, description,
              due_date as dueDate, due_time as dueTime, priority, status,
-             category, created_at as createdAt
+             category, created_at as createdAt, COALESCE(semester_number, 1) as semesterNumber
       FROM tasks WHERE id = ?
     `).get(taskId);
 
@@ -805,8 +1146,11 @@ app.delete('/api/tasks/:id', requireAuth, (req, res) => {
 // Log Attendance (Atomic Transaction)
 app.post('/api/attendance', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, status, date, note } = req.body;
+    const { userId, courseId, status, date, note, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
+
     const recordId = crypto.randomUUID();
     const logDate = date || new Date().toISOString().split('T')[0];
 
@@ -817,9 +1161,9 @@ app.post('/api/attendance', requireAuth, (req, res) => {
 
     const logTx = db.transaction(() => {
       db.prepare(`
-        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null);
+        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, semester_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null, semNumber);
 
       if (heldIncrement > 0) {
         db.prepare(`
@@ -834,7 +1178,7 @@ app.post('/api/attendance', requireAuth, (req, res) => {
     logTx();
 
     const record = db.prepare(`
-      SELECT id, course_id as courseId, log_date as date, status, note
+      SELECT id, course_id as courseId, log_date as date, status, note, COALESCE(semester_number, 1) as semesterNumber
       FROM attendance_records WHERE id = ?
     `).get(recordId);
 
@@ -1189,8 +1533,8 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
       // 5. Insert Attendance Records
       if (Array.isArray(data.attendanceRecords)) {
         const insertAtt = db.prepare(`
-          INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, semester_number)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const a of data.attendanceRecords) {
@@ -1202,14 +1546,46 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
             targetCourseId,
             a.date || new Date().toISOString().split('T')[0],
             a.status || 'present',
-            a.note || null
+            a.note || null,
+            Number(a.semesterNumber) || 1
           );
         }
       }
 
-      // 6. Update user theme preference if present
+      // 6. Insert Academic Semesters
+      if (Array.isArray(data.semesters) && data.semesters.length > 0) {
+        db.prepare('DELETE FROM academic_semesters WHERE user_id = ?').run(userId);
+        const insertSem = db.prepare(`
+          INSERT INTO academic_semesters (
+            id, user_id, semester_number, title, status, start_date, end_date,
+            final_attendance_pct, credits_earned, sgpa, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const s of data.semesters) {
+          insertSem.run(
+            s.id && s.id.length > 5 ? s.id : crypto.randomUUID(),
+            userId,
+            s.semesterNumber,
+            s.title || `Semester ${s.semesterNumber}`,
+            s.status || 'active',
+            s.startDate || null,
+            s.endDate || null,
+            s.finalAttendancePct !== undefined ? s.finalAttendancePct : null,
+            s.creditsEarned !== undefined ? s.creditsEarned : 0,
+            s.sgpa !== undefined ? s.sgpa : null,
+            s.notes || null
+          );
+        }
+      }
+
+      // 7. Update user theme preference & active semester if present
       if (data.theme) {
         db.prepare('UPDATE users SET theme_preference = ? WHERE id = ?').run(data.theme, userId);
+      }
+      if (data.activeSemesterNumber) {
+        db.prepare('UPDATE users SET active_semester_number = ?, semester = ? WHERE id = ?')
+          .run(data.activeSemesterNumber, `Semester ${data.activeSemesterNumber}`, userId);
       }
     });
 

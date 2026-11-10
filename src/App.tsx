@@ -25,7 +25,9 @@ import {
   apiUpdateProfile, 
   apiWipeData,
   apiDeleteAccount,
-  apiRestoreStudentData
+  apiRestoreStudentData,
+  apiBackfillSemesters,
+  apiPromoteSemester
 } from './services/api';
 import { THEMES } from './styles/themes';
 import { AuthScreen } from './components/AuthScreen';
@@ -40,8 +42,12 @@ import { AddModal } from './components/AddModal';
 import { ExportModal } from './components/ExportModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PdfImportModal } from './components/PdfImportModal';
+import { PromoteSemesterModal } from './components/PromoteSemesterModal';
+import { AcademicVaultModal } from './components/AcademicVaultModal';
 import { EmptyState } from './components/EmptyState';
 import { getTodayDayName } from './utils/timeUtils';
+import { AcademicSemester } from './types';
+import { History, ArrowLeft, Award, Sparkles, TrendingUp } from 'lucide-react';
 
 const SESSION_KEY = 'academiasync_active_user_v3';
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -73,6 +79,9 @@ export function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAttendanceHistory, setShowAttendanceHistory] = useState(false);
   const [showPdfImportModal, setShowPdfImportModal] = useState(false);
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showVaultModal, setShowVaultModal] = useState(false);
+  const [selectedSemesterNumber, setSelectedSemesterNumber] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -213,7 +222,8 @@ export function App() {
     note?: string
   ) => {
     try {
-      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note);
+      const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
+      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note, activeSem);
       setState((prev) => ({
         ...prev,
         courses: prev.courses.map((c) => (c.id === courseId ? { ...c, totalClasses: res.updatedCourse.totalClasses, attendedClasses: res.updatedCourse.attendedClasses } : c)),
@@ -221,7 +231,7 @@ export function App() {
       }));
       showToast(`Logged attendance as ${status.toUpperCase()}`, 'success');
     } catch (err) {
-      console.error('Error logging attendance in Postgres:', err);
+      console.error('Error logging attendance in database:', err);
       showToast('Failed to log attendance.', 'error');
     }
   };
@@ -255,7 +265,7 @@ export function App() {
       }));
       showToast('Undid latest attendance entry.', 'info');
     } catch (err) {
-      console.error('Error undoing attendance in Postgres:', err);
+      console.error('Error undoing attendance in database:', err);
       showToast('Failed to undo attendance.', 'error');
     }
   };
@@ -263,14 +273,15 @@ export function App() {
   // Slot Handlers
   const handleAddSlot = async (newSlot: Omit<TimeSlot, 'id' | 'userId'>) => {
     try {
-      const created = await apiAddSlot({ ...newSlot, userId: currentUser.id });
+      const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
+      const created = await apiAddSlot({ ...newSlot, userId: currentUser.id, semesterNumber: activeSem });
       setState((prev) => ({
         ...prev,
         timeSlots: [...prev.timeSlots, created],
       }));
       showToast('Class slot added to schedule.', 'success');
     } catch (err) {
-      console.error('Error adding slot in Postgres:', err);
+      console.error('Error adding slot in database:', err);
       showToast('Failed to save slot to database.', 'error');
     }
   };
@@ -285,7 +296,7 @@ export function App() {
       setEditingSlot(null);
       showToast('Class slot updated successfully.', 'success');
     } catch (err) {
-      console.error('Error updating slot in Postgres:', err);
+      console.error('Error updating slot in database:', err);
       showToast('Failed to update class slot.', 'error');
     }
   };
@@ -299,7 +310,7 @@ export function App() {
       }));
       showToast('Class slot deleted.', 'info');
     } catch (err) {
-      console.error('Error deleting slot in Postgres:', err);
+      console.error('Error deleting slot in database:', err);
       showToast('Failed to delete class slot.', 'error');
     }
   };
@@ -307,13 +318,14 @@ export function App() {
   // Task Handlers
   const handleAddTask = async (newTask: Omit<Task, 'id' | 'createdAt' | 'userId'>) => {
     try {
-      const created = await apiAddTask({ ...newTask, userId: currentUser.id });
+      const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
+      const created = await apiAddTask({ ...newTask, userId: currentUser.id, semesterNumber: activeSem });
       setState((prev) => ({
         ...prev,
         tasks: [created, ...prev.tasks],
       }));
     } catch (err) {
-      console.error('Error creating task in Postgres:', err);
+      console.error('Error creating task in database:', err);
     }
   };
 
@@ -325,7 +337,7 @@ export function App() {
         tasks: prev.tasks.map((t) => (t.id === res.id ? res : t)),
       }));
     } catch (err) {
-      console.error('Error updating task in Postgres:', err);
+      console.error('Error updating task in database:', err);
     }
   };
 
@@ -337,20 +349,21 @@ export function App() {
         tasks: prev.tasks.filter((t) => t.id !== taskId),
       }));
     } catch (err) {
-      console.error('Error deleting task in Postgres:', err);
+      console.error('Error deleting task in database:', err);
     }
   };
 
   // Course Handlers
   const handleAddCourse = async (newCourse: Omit<Course, 'id' | 'totalClasses' | 'attendedClasses' | 'userId'>) => {
     try {
-      const created = await apiAddCourse({ ...newCourse, userId: currentUser.id });
+      const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
+      const created = await apiAddCourse({ ...newCourse, userId: currentUser.id, semesterNumber: activeSem });
       setState((prev) => ({
         ...prev,
         courses: [...prev.courses, created],
       }));
     } catch (err) {
-      console.error('Error adding course in Postgres:', err);
+      console.error('Error adding course in database:', err);
     }
   };
 
@@ -362,7 +375,7 @@ export function App() {
         courses: prev.courses.map((c) => (c.id === res.id ? res : c)),
       }));
     } catch (err) {
-      console.error('Error updating course in Postgres:', err);
+      console.error('Error updating course in database:', err);
     }
   };
 
@@ -376,7 +389,7 @@ export function App() {
         tasks: prev.tasks.map((t) => (t.courseId === courseId ? { ...t, courseId: undefined } : t)),
       }));
     } catch (err) {
-      console.error('Error deleting course in Postgres:', err);
+      console.error('Error deleting course in database:', err);
     }
   };
 
@@ -386,7 +399,7 @@ export function App() {
       const res = await apiUpdateProfile(updatedUser);
       setCurrentUser(res);
     } catch (err) {
-      console.error('Error updating user profile in Postgres:', err);
+      console.error('Error updating user profile in database:', err);
     }
   };
 
@@ -399,6 +412,44 @@ export function App() {
         targetAttendance: personalGoal,
       };
       await handleUpdateUser(updated);
+    }
+  };
+
+  // Multi-Semester Advancement & Performance Vault Handlers
+  const handlePromoteSemester = async (
+    nextSemesterNumber: number,
+    summary: { finalAttendancePct?: number; creditsEarned: number; sgpa?: number; notes?: string }
+  ) => {
+    if (!currentUser) return;
+    try {
+      const res = await apiPromoteSemester(currentUser.id, nextSemesterNumber, summary);
+      if (res.success && res.user && res.data) {
+        setCurrentUser(res.user);
+        setState(res.data);
+        setSelectedSemesterNumber(null);
+        localStorage.setItem(SESSION_KEY, JSON.stringify(res.user));
+        showToast(`🎉 Promoted to Semester ${nextSemesterNumber}! Welcome to your new semester.`, 'success');
+      }
+    } catch (err: any) {
+      console.error('Promotion error:', err);
+      showToast(err.message || 'Failed to promote semester.', 'error');
+    }
+  };
+
+  const handleUpdateSemesters = async (semesters: AcademicSemester[]) => {
+    if (!currentUser) return;
+    try {
+      const res = await apiBackfillSemesters(currentUser.id, semesters);
+      if (res.success) {
+        setState((prev) => ({
+          ...prev,
+          semesters: res.semesters,
+        }));
+        showToast('Semester performance records updated in Vault.', 'success');
+      }
+    } catch (err: any) {
+      console.error('Update semesters error:', err);
+      showToast(err.message || 'Failed to update semester records.', 'error');
     }
   };
 
@@ -467,10 +518,16 @@ export function App() {
   ) => {
     if (!currentUser) return;
 
+    const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
+    const otherCourses = state.courses.filter((c) => (c.semesterNumber || 1) !== activeSem);
+    const otherSlots = state.timeSlots.filter((s) => (s.semesterNumber || 1) !== activeSem);
+    const taggedCourses = newCourses.map((c) => ({ ...c, semesterNumber: activeSem }));
+    const taggedSlots = newSlots.map((s) => ({ ...s, semesterNumber: activeSem }));
+
     const mergedState: StudentData = {
       ...state,
-      courses: newCourses,
-      timeSlots: newSlots,
+      courses: [...otherCourses, ...taggedCourses],
+      timeSlots: [...otherSlots, ...taggedSlots],
     };
 
     setState(mergedState);
@@ -492,7 +549,24 @@ export function App() {
       }
     }
 
-    showToast(`Successfully imported ${newCourses.length} courses & ${newSlots.length} timetable slots!`, 'success');
+    showToast(`Successfully imported ${newCourses.length} courses & ${newSlots.length} timetable slots for Semester ${activeSem}!`, 'success');
+  };
+
+  const activeSemesterNumber = currentUser?.activeSemesterNumber || parseInt(String(currentUser?.semester).replace(/\D/g, ''), 10) || 1;
+  const currentViewSemesterNumber = selectedSemesterNumber ?? activeSemesterNumber;
+  const isViewingHistorical = currentViewSemesterNumber !== activeSemesterNumber;
+
+  const viewCourses = state.courses.filter((c) => (c.semesterNumber || 1) === currentViewSemesterNumber);
+  const viewSlots = state.timeSlots.filter((s) => (s.semesterNumber || 1) === currentViewSemesterNumber);
+  const viewTasks = state.tasks.filter((t) => (t.semesterNumber || 1) === currentViewSemesterNumber);
+  const viewAttendance = state.attendanceRecords.filter((a) => (a.semesterNumber || 1) === currentViewSemesterNumber);
+
+  const viewState: StudentData = {
+    ...state,
+    courses: viewCourses,
+    timeSlots: viewSlots,
+    tasks: viewTasks,
+    attendanceRecords: viewAttendance,
   };
 
   return (
@@ -502,6 +576,10 @@ export function App() {
       <Header
         user={currentUser}
         state={state}
+        selectedSemesterNumber={currentViewSemesterNumber}
+        onSelectSemester={(semNum) => setSelectedSemesterNumber(semNum === activeSemesterNumber ? null : semNum)}
+        onOpenVault={() => setShowVaultModal(true)}
+        onOpenPromoteModal={() => setShowPromoteModal(true)}
         onViewChange={handleViewChange}
         onThemeChange={handleThemeChange}
         onOpenAddModal={(type) => setAddModalType(type)}
@@ -512,20 +590,96 @@ export function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+
+        {/* Historical Archive Banner */}
+        {isViewingHistorical && (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 font-bold">
+                🏛️
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                    Historical Archive View
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                    Semester {currentViewSemesterNumber} (Read-Only)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  You are viewing preserved timetable matrices, courses, and attendance logs from Semester {currentViewSemesterNumber}.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setSelectedSemesterNumber(null)}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 shadow-md transition-all shrink-0 flex items-center gap-1.5"
+            >
+              <span>← Return to Active Semester ({activeSemesterNumber})</span>
+            </button>
+          </div>
+        )}
+
+        {/* Backfilled Semester Performance Notice (if no weekly timetable logged) */}
+        {(() => {
+          const currentSemRecord = state.semesters?.find((s) => s.semesterNumber === currentViewSemesterNumber);
+          if (currentSemRecord && currentSemRecord.status === 'backfilled' && viewCourses.length === 0) {
+            return (
+              <div className="mb-6 p-5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-indigo-300 flex items-center gap-2">
+                    <History className="w-4 h-4 text-indigo-400" />
+                    <span>Semester {currentViewSemesterNumber} Performance Snapshot (Backfilled Record)</span>
+                  </h3>
+                  <button
+                    onClick={() => setShowVaultModal(true)}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
+                  >
+                    Edit in Vault →
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  This semester was logged during smart onboarding as a prior completed semester.
+                </p>
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] text-slate-400">Attendance</span>
+                    <div className="text-base font-bold text-white">
+                      {currentSemRecord.finalAttendancePct !== undefined && currentSemRecord.finalAttendancePct !== null
+                        ? `${currentSemRecord.finalAttendancePct.toFixed(1)}%`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] text-slate-400">Credits Earned</span>
+                    <div className="text-base font-bold text-white">{currentSemRecord.creditsEarned} Cr</div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] text-slate-400">SGPA</span>
+                    <div className="text-base font-bold text-white">{currentSemRecord.sgpa ? currentSemRecord.sgpa.toFixed(2) : '—'}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
         
         {/* VIEW 1: DASHBOARD */}
         {state.activeView === 'dashboard' && (
           <div>
             <LiveHero
               user={currentUser}
-              state={state}
+              state={viewState}
               onMarkAttendance={handleMarkAttendance}
               onViewChange={handleViewChange}
               onOpenAddModal={(type) => setAddModalType(type)}
             />
 
             {/* If zero courses, show empty setup state */}
-            {state.courses.length === 0 ? (
+            {viewState.courses.length === 0 ? (
               <EmptyState
                 type="courses"
                 themeKey={state.theme}
@@ -548,7 +702,7 @@ export function App() {
                     </button>
                   </div>
                   <TimetableGrid
-                    state={state}
+                    state={viewState}
                     onOpenAddSlot={() => setAddModalType('slot')}
                     onOpenAddCourse={() => setAddModalType('course')}
                     onEditSlot={(slot) => setEditingSlot(slot)}
@@ -573,7 +727,7 @@ export function App() {
                     </button>
                   </div>
                   <TaskManager
-                    state={state}
+                    state={viewState}
                     onAddTask={handleAddTask}
                     onUpdateTask={handleUpdateTask}
                     onDeleteTask={handleDeleteTask}
@@ -588,16 +742,30 @@ export function App() {
         {/* VIEW 2: FULL TIMETABLE */}
         {state.activeView === 'timetable' && (
           <div>
-            <div className="mb-6">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight" style={{ color: currentTheme.textPrimary }}>
-                My Academic Timetable
-              </h1>
-              <p className="text-xs sm:text-sm mt-1" style={{ color: currentTheme.textSecondary }}>
-                Manage your weekly lecture halls, lab sessions, and tutorial periods.
-              </p>
+            <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight" style={{ color: currentTheme.textPrimary }}>
+                  {isViewingHistorical ? `Semester ${currentViewSemesterNumber} Timetable Archive` : 'My Academic Timetable'}
+                </h1>
+                <p className="text-xs sm:text-sm mt-1" style={{ color: currentTheme.textSecondary }}>
+                  {isViewingHistorical
+                    ? `Viewing saved schedule slots and labs from Semester ${currentViewSemesterNumber}.`
+                    : 'Manage your weekly lecture halls, lab sessions, and tutorial periods.'}
+                </p>
+              </div>
+
+              {!isViewingHistorical && (
+                <button
+                  onClick={() => setShowPromoteModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-all flex items-center gap-1.5"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>Advance Semester</span>
+                </button>
+              )}
             </div>
             <TimetableGrid
-              state={state}
+              state={viewState}
               onOpenAddSlot={() => setAddModalType('slot')}
               onOpenAddCourse={() => setAddModalType('course')}
               onOpenPdfImport={() => setShowPdfImportModal(true)}
@@ -618,11 +786,11 @@ export function App() {
                 Assignment & Task Kanban
               </h1>
               <p className="text-xs sm:text-sm mt-1" style={{ color: currentTheme.textSecondary }}>
-                Keep track of homework deliverables, checklists, and project deadlines.
+                Keep track of homework deliverables, checklists, and project deadlines for Semester {currentViewSemesterNumber}.
               </p>
             </div>
             <TaskManager
-              state={state}
+              state={viewState}
               onAddTask={handleAddTask}
               onUpdateTask={handleUpdateTask}
               onDeleteTask={handleDeleteTask}
@@ -639,12 +807,12 @@ export function App() {
                 Attendance & Safe Bunk Engine
               </h1>
               <p className="text-xs sm:text-sm mt-1" style={{ color: currentTheme.textSecondary }}>
-                Real-time percentage calculations and safe bunk margin predictions per course.
+                Real-time percentage calculations and safe bunk margin predictions for Semester {currentViewSemesterNumber}.
               </p>
             </div>
             <AttendanceCalculator
               user={currentUser}
-              state={state}
+              state={viewState}
               onUpdateCourse={handleUpdateCourse}
               onDeleteCourse={handleDeleteCourse}
               onUpdateGoals={handleUpdateGoals}
@@ -668,7 +836,7 @@ export function App() {
               </p>
             </div>
             <ExamCountdownHub
-              state={state}
+              state={viewState}
               onOpenAddModal={() => setAddModalType('task')}
               onUpdateTask={handleUpdateTask}
             />
@@ -682,7 +850,7 @@ export function App() {
         <AddModal
           type={addModalType || 'slot'}
           initialSlot={editingSlot}
-          state={state}
+          state={viewState}
           defaultTargetAttendance={currentUser.personalGoalAttendance || currentUser.collegeMinAttendance || 75}
           onClose={() => {
             setAddModalType(null);
@@ -714,6 +882,27 @@ export function App() {
         />
       )}
 
+      {showPromoteModal && (
+        <PromoteSemesterModal
+          user={currentUser}
+          state={state}
+          onClose={() => setShowPromoteModal(false)}
+          onPromote={handlePromoteSemester}
+          onOpenPdfScanner={() => setShowPdfImportModal(true)}
+        />
+      )}
+
+      {showVaultModal && (
+        <AcademicVaultModal
+          user={currentUser}
+          state={state}
+          onClose={() => setShowVaultModal(false)}
+          onSelectSemesterForViewing={(semNum) => setSelectedSemesterNumber(semNum === activeSemesterNumber ? null : semNum)}
+          onUpdateSemesters={handleUpdateSemesters}
+          onOpenPromoteModal={() => setShowPromoteModal(true)}
+        />
+      )}
+
       {showSettingsModal && (
         <SettingsModal
           user={currentUser}
@@ -725,12 +914,13 @@ export function App() {
           onClearAllData={handleClearAllData}
           onDeleteAccount={handleDeleteAccount}
           onSyncToSQLite={handleSyncToSQLite}
+          onOpenVault={() => setShowVaultModal(true)}
         />
       )}
 
       {showAttendanceHistory && (
         <AttendanceHistoryModal
-          state={state}
+          state={viewState}
           onClose={() => setShowAttendanceHistory(false)}
           onLogAttendance={handleMarkAttendance}
           onDeleteRecord={handleDeleteAttendanceRecord}

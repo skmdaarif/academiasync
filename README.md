@@ -72,6 +72,18 @@ Switch effortlessly between bespoke color palettes with smooth transitions:
 - **Lab Batch Group Filtering**: Lets students choose their assigned lab group (e.g., `Group 1`, `Group 2`, or `All`) to automatically exclude other batches' practical sessions.
 - **100% Private & Local**: Client-side parsing using Mozilla `pdfjs-dist` with zero external cloud APIs or data transmission.
 
+### 🏛️ 9. Multi-Semester History & Academic Performance Vault (v2.1.0)
+- **Zero Data Loss Across Semesters**: Older semesters' timetables, courses, and attendance logs are never wiped or overwritten when starting a new term. Every record is indexed and preserved by `semesterNumber`.
+- **Degree KPI Tracking**: Aggregates lifetime degree metrics in the Vault: Total Credits Earned, Overall Average Attendance %, and Cumulative GPA (CGPA).
+- **Historical Snapshot Browser**: Inspect any past semester's schedule matrix, course list, or attendance records with a single click from the Header dropdown with full read-only snapshot protection.
+
+### 🎓 10. Smart Onboarding & Prior Semester Backfill
+- **Intelligent Admission Check**: If a student registers at a semester after Semester 1 (e.g. Sem 3 or Sem 5), AcademiaSync asks if they are a **Fresh / Lateral Entry** or a **Continuing Student**.
+- **Frictionless Backfill**: Continuing students can log their past semesters' attendance %, credits earned, and SGPA on registration or skip to fill anytime in the Vault.
+
+### 🚀 11. "Promote to Next Semester" Advancement Wizard
+- **Automated Term Closing**: Computes closing semester attendance percentage and credit totals, archives the term in SQLite, and advances the student to `Semester X+1` with a fresh schedule canvas ready for the new term's PDF scan!
+
 ---
 
 ## 🛠️ Tech Stack

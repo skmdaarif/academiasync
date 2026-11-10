@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StudentData, UserAccount, Course } from '../types';
 import { THEMES } from '../styles/themes';
-import { X, User, BookOpen, Trash2, Check, RotateCcw, Edit3, Database } from 'lucide-react';
+import { X, User, BookOpen, Trash2, Check, RotateCcw, Edit3, Database, Award } from 'lucide-react';
 
 interface SettingsModalProps {
   user: UserAccount;
@@ -14,6 +14,7 @@ interface SettingsModalProps {
   onDeleteAccount: () => void;
   onSyncToSQLite?: () => void;
   onSyncToPostgres?: () => void;
+  onOpenVault?: () => void;
 }
 
 const PRESET_COLORS = [
@@ -39,6 +40,7 @@ export function SettingsModal({
   onDeleteAccount,
   onSyncToSQLite,
   onSyncToPostgres,
+  onOpenVault,
 }: SettingsModalProps) {
   const handleSync = onSyncToSQLite || onSyncToPostgres;
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
@@ -281,11 +283,25 @@ export function SettingsModal({
           {/* Footer controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
             <div className="flex items-center gap-2 flex-wrap">
+              {onOpenVault && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenVault();
+                  }}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-950/30 transition-colors"
+                  title="View lifetime degree performance, past semesters, and credits"
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  Academic Vault
+                </button>
+              )}
               {handleSync && (
                 <button
                   type="button"
                   onClick={handleSync}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-950/30 transition-colors"
+                  className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-emerald-950/30 transition-colors"
                   title="Push and synchronize all current timetable and attendance data into the local SQLite database"
                 >
                   <Database className="w-3.5 h-3.5" />

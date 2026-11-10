@@ -2,6 +2,23 @@ export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Frida
 
 export type SlotType = 'Lecture' | 'Lab' | 'Tutorial' | 'Seminar' | 'Club / Activity';
 
+export type AdmissionType = 'fresh' | 'lateral' | 'continuing';
+
+export interface AcademicSemester {
+  id: string;
+  userId?: string;
+  semesterNumber: number;
+  title: string; // e.g. "Semester 1", "Semester 3"
+  status: 'active' | 'archived' | 'backfilled';
+  startDate?: string;
+  endDate?: string;
+  finalAttendancePct?: number;
+  creditsEarned: number;
+  sgpa?: number;
+  notes?: string;
+  createdAt?: string;
+}
+
 export interface UserAccount {
   id: string;
   email: string;
@@ -15,6 +32,8 @@ export interface UserAccount {
   totalSemesters: number;
   rollNumber?: string; // University Roll Number or Student VID
   vid?: string; // Alias for student VID
+  admissionType?: AdmissionType;
+  activeSemesterNumber?: number;
   semesterStartDate?: string; // e.g. "2026-08-01"
   collegeMinAttendance: number; // e.g. 75% set by University
   personalGoalAttendance: number; // e.g. 90% custom student target (>= collegeMinAttendance)
@@ -37,6 +56,7 @@ export interface Course {
   attendanceGoal?: number; // Custom course-specific target
   totalClasses: number;
   attendedClasses: number;
+  semesterNumber?: number;
 }
 
 export interface TimeSlot {
@@ -50,6 +70,7 @@ export interface TimeSlot {
   type: SlotType;
   notes?: string;
   meetingLink?: string;
+  semesterNumber?: number;
 }
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -74,6 +95,7 @@ export interface Task {
   status: TaskStatus;
   category: TaskCategory;
   subtasks?: SubTask[];
+  semesterNumber?: number;
   createdAt?: string;
 }
 
@@ -87,6 +109,7 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
   slotId?: string;
   note?: string;
+  semesterNumber?: number;
 }
 
 export type ThemeKey = 
@@ -102,6 +125,8 @@ export interface StudentData {
   timeSlots: TimeSlot[];
   tasks: Task[];
   attendanceRecords: AttendanceRecord[];
+  semesters?: AcademicSemester[];
+  activeSemesterNumber?: number;
   theme: ThemeKey;
   activeView: 'dashboard' | 'timetable' | 'tasks' | 'attendance' | 'exams';
 }

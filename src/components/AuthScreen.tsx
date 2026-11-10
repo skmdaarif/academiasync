@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserAccount, StudentData } from '../types';
+import { UserAccount, StudentData, AdmissionType, AcademicSemester } from '../types';
 import { apiLogin, apiRegister, apiCheckHealth } from '../services/api';
 import { COUNTRIES_UNIVERSITIES } from '../data/universities';
 import { DEGREE_PROGRAMS, getSemestersForDegree } from '../data/degrees';
@@ -19,7 +19,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   Sparkles,
-  Database
+  Database,
+  History
 } from 'lucide-react';
 
 interface AuthScreenProps {
@@ -54,6 +55,27 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [degreeType, setDegreeType] = useState(DEGREE_PROGRAMS[0].id);
   const [semester, setSemester] = useState('Semester 1');
   const [targetAttendance, setTargetAttendance] = useState(75);
+
+  // Smart Multi-Semester Onboarding State
+  const [admissionType, setAdmissionType] = useState<AdmissionType>('fresh');
+  const [backfillEntries, setBackfillEntries] = useState<Record<number, { finalAttendancePct: number; creditsEarned: number; sgpa: string }>>({});
+  const [skipBackfill, setSkipBackfill] = useState(false);
+
+  const currentSemNum = parseInt(semester.replace(/\D/g, ''), 10) || 1;
+
+  useEffect(() => {
+    if (currentSemNum > 1) {
+      setBackfillEntries((prev) => {
+        const updated = { ...prev };
+        for (let s = 1; s < currentSemNum; s++) {
+          if (!updated[s]) {
+            updated[s] = { finalAttendancePct: 80, creditsEarned: 20, sgpa: '8.0' };
+          }
+        }
+        return updated;
+      });
+    }
+  }, [currentSemNum]);
 
   // Universities for selected country
   const selectedCountryObj = COUNTRIES_UNIVERSITIES.find((c) => c.country === country) || COUNTRIES_UNIVERSITIES[0];
@@ -125,6 +147,23 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
 
         const finalCollege = isCustomCollege ? (customCollege.trim() || 'University') : collegeName;
 
+        let finalBackfilledSemesters: AcademicSemester[] | undefined = undefined;
+        if (admissionType === 'continuing' && !skipBackfill && currentSemNum > 1) {
+          finalBackfilledSemesters = Array.from({ length: currentSemNum - 1 }, (_, i) => i + 1).map((sNum) => {
+            const entry = backfillEntries[sNum] || { finalAttendancePct: 80, creditsEarned: 20, sgpa: '8.0' };
+            const parsedSgpa = parseFloat(entry.sgpa);
+            return {
+              id: `sem_${Date.now()}_${sNum}`,
+              semesterNumber: sNum,
+              title: `Semester ${sNum}`,
+              status: 'backfilled' as const,
+              finalAttendancePct: Number(entry.finalAttendancePct) || 80,
+              creditsEarned: Number(entry.creditsEarned) || 20,
+              sgpa: !isNaN(parsedSgpa) && parsedSgpa > 0 ? parsedSgpa : undefined,
+            };
+          });
+        }
+
         const res = await apiRegister({
           name,
           email,
@@ -136,6 +175,8 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           semester,
           targetAttendance,
           staySignedIn,
+          admissionType: currentSemNum > 1 ? admissionType : 'fresh',
+          backfilledSemesters: finalBackfilledSemesters,
         });
 
         if (res.success && res.user && res.data) {
@@ -462,6 +503,138 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                   ))}
                 </div>
               </div>
+
+              {/* If semester > 1, Ask Fresh/Lateral vs Continuing Student */}
+              {currentSemNum > 1 && (
+                <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-3">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                      <History className="w-3.5 h-3.5 text-indigo-400" />
+                      Admission Status for {semester}
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Are you a direct lateral entry student or continuing your degree from earlier semesters?
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAdmissionType('fresh')}
+                      className={`p-2.5 rounded-xl text-left border transition-all ${
+                        admissionType === 'fresh'
+                          ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm ring-1 ring-indigo-500'
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-slate-200">🌱 Fresh / Lateral</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                        Starting directly at {semester}. No prior semesters to log.
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdmissionType('continuing')}
+                      className={`p-2.5 rounded-xl text-left border transition-all ${
+                        admissionType === 'continuing'
+                          ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm ring-1 ring-indigo-500'
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-slate-200">📚 Continuing Student</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                        Log past semesters (Sem 1 to {currentSemNum - 1}) performance.
+                      </div>
+                    </button>
+                  </div>
+
+                  {admissionType === 'continuing' && (
+                    <div className="space-y-2.5 pt-2 border-t border-white/10">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-300">
+                          Past Semester Performance Records
+                        </span>
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer hover:text-white select-none">
+                          <input
+                            type="checkbox"
+                            checked={skipBackfill}
+                            onChange={(e) => setSkipBackfill(e.target.checked)}
+                            className="rounded bg-white/10 border-white/20 text-indigo-500 focus:ring-0 w-3.5 h-3.5"
+                          />
+                          Skip for now (fill later in Vault)
+                        </label>
+                      </div>
+
+                      {!skipBackfill && (
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {Array.from({ length: currentSemNum - 1 }, (_, i) => i + 1).map((sNum) => {
+                            const entry = backfillEntries[sNum] || { finalAttendancePct: 80, creditsEarned: 20, sgpa: '8.0' };
+                            return (
+                              <div key={sNum} className="p-2.5 rounded-xl bg-slate-900/90 border border-white/10 grid grid-cols-3 gap-2 items-center">
+                                <div>
+                                  <span className="text-[11px] font-bold text-indigo-300">Sem {sNum}</span>
+                                  <span className="block text-[9px] text-slate-400">Archived Record</span>
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] text-slate-400 mb-0.5">Attendance %</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={entry.finalAttendancePct}
+                                    onChange={(e) => {
+                                      const val = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                                      setBackfillEntries((prev) => ({
+                                        ...prev,
+                                        [sNum]: { ...entry, finalAttendancePct: val },
+                                      }));
+                                    }}
+                                    className="w-full px-2 py-1 text-xs rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-indigo-400"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] text-slate-400 mb-0.5">Credits / SGPA</label>
+                                  <div className="flex gap-1">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      placeholder="Cr"
+                                      value={entry.creditsEarned}
+                                      onChange={(e) => {
+                                        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                        setBackfillEntries((prev) => ({
+                                          ...prev,
+                                          [sNum]: { ...entry, creditsEarned: val },
+                                        }));
+                                      }}
+                                      className="w-1/2 px-2 py-1 text-xs rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-indigo-400"
+                                      title="Credits Earned"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="SGPA"
+                                      value={entry.sgpa}
+                                      onChange={(e) => {
+                                        setBackfillEntries((prev) => ({
+                                          ...prev,
+                                          [sNum]: { ...entry, sgpa: e.target.value },
+                                        }));
+                                      }}
+                                      className="w-1/2 px-2 py-1 text-xs rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-indigo-400"
+                                      title="Optional SGPA (e.g. 8.2)"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 

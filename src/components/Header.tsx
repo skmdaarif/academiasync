@@ -11,7 +11,11 @@ import {
   Settings as SettingsIcon,
   BookOpen,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  ChevronDown,
+  Award,
+  TrendingUp,
+  History
 } from 'lucide-react';
 import { StudentData, ThemeKey, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
@@ -19,6 +23,10 @@ import { THEMES } from '../styles/themes';
 interface HeaderProps {
   user: UserAccount;
   state: StudentData;
+  selectedSemesterNumber?: number;
+  onSelectSemester?: (semNumber: number) => void;
+  onOpenVault?: () => void;
+  onOpenPromoteModal?: () => void;
   onViewChange: (view: StudentData['activeView']) => void;
   onThemeChange: (theme: ThemeKey) => void;
   onOpenAddModal: (type: 'slot' | 'task' | 'course') => void;
@@ -30,6 +38,10 @@ interface HeaderProps {
 export function Header({
   user,
   state,
+  selectedSemesterNumber,
+  onSelectSemester,
+  onOpenVault,
+  onOpenPromoteModal,
   onViewChange,
   onThemeChange,
   onOpenAddModal,
@@ -41,6 +53,7 @@ export function Header({
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSemesterMenu, setShowSemesterMenu] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -80,16 +93,134 @@ export function Header({
                 <span className="font-extrabold text-lg tracking-tight" style={{ color: currentTheme.textPrimary }}>
                   Academia<span style={{ color: currentTheme.accent }}>Sync</span>
                 </span>
-                <span 
-                  className="hidden sm:inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full border"
-                  style={{
-                    backgroundColor: currentTheme.badgeBg,
-                    borderColor: currentTheme.cardBorder,
-                    color: currentTheme.accent,
-                  }}
-                >
-                  {user.semester}
-                </span>
+
+                {/* Interactive Multi-Semester Badge & Switcher */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowSemesterMenu(!showSemesterMenu)}
+                    className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border transition-all hover:scale-105"
+                    style={{
+                      backgroundColor: selectedSemesterNumber && selectedSemesterNumber !== (user.activeSemesterNumber || 1)
+                        ? 'rgba(245, 158, 11, 0.15)'
+                        : currentTheme.badgeBg,
+                      borderColor: selectedSemesterNumber && selectedSemesterNumber !== (user.activeSemesterNumber || 1)
+                        ? 'rgba(245, 158, 11, 0.4)'
+                        : currentTheme.cardBorder,
+                      color: selectedSemesterNumber && selectedSemesterNumber !== (user.activeSemesterNumber || 1)
+                        ? '#fbbf24'
+                        : currentTheme.accent,
+                    }}
+                    title="Switch Semester or View Academic Vault"
+                  >
+                    <span>
+                      {selectedSemesterNumber && selectedSemesterNumber !== (user.activeSemesterNumber || 1)
+                        ? `Viewing Sem ${selectedSemesterNumber} (Archive)`
+                        : user.semester || `Semester ${user.activeSemesterNumber || 1}`}
+                    </span>
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  </button>
+
+                  {/* Semester Dropdown Menu */}
+                  {showSemesterMenu && (
+                    <div 
+                      className="absolute left-0 mt-2 w-64 rounded-2xl p-2 border shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-2xl"
+                      style={{
+                        backgroundColor: currentTheme.headerBg,
+                        borderColor: currentTheme.cardBorder,
+                      }}
+                    >
+                      <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Academic Semesters</span>
+                        <span className="text-indigo-400 font-semibold cursor-pointer hover:underline" onClick={() => {
+                          setShowSemesterMenu(false);
+                          if (onOpenVault) onOpenVault();
+                        }}>
+                          Vault
+                        </span>
+                      </div>
+
+                      {/* Semester items */}
+                      <div className="space-y-1 my-1 max-h-48 overflow-y-auto pr-0.5">
+                        {state.semesters && state.semesters.length > 0 ? (
+                          [...state.semesters]
+                            .sort((a, b) => b.semesterNumber - a.semesterNumber)
+                            .map((sem) => {
+                              const isActive = sem.semesterNumber === (user.activeSemesterNumber || 1);
+                              const isSelected = (selectedSemesterNumber || user.activeSemesterNumber || 1) === sem.semesterNumber;
+
+                              return (
+                                <button
+                                  key={sem.semesterNumber}
+                                  type="button"
+                                  onClick={() => {
+                                    if (onSelectSemester) onSelectSemester(sem.semesterNumber);
+                                    setShowSemesterMenu(false);
+                                  }}
+                                  className={`w-full px-2.5 py-2 rounded-xl text-left text-xs transition-all flex items-center justify-between ${
+                                    isSelected
+                                      ? 'bg-indigo-600/25 border border-indigo-500/40 text-white font-bold'
+                                      : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{sem.title}</span>
+                                      {isActive && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 block font-normal">
+                                      {sem.creditsEarned} Cr{sem.finalAttendancePct ? ` • ${sem.finalAttendancePct.toFixed(0)}%` : ''}
+                                    </span>
+                                  </div>
+
+                                  <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold uppercase tracking-wider ${
+                                    isActive
+                                      ? 'bg-emerald-500/20 text-emerald-400'
+                                      : 'bg-white/10 text-slate-400'
+                                  }`}>
+                                    {isActive ? 'Active' : sem.status}
+                                  </span>
+                                </button>
+                              );
+                            })
+                        ) : (
+                          <div className="px-2.5 py-2 text-xs text-slate-400">
+                            Current: {user.semester} (Active)
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-1.5 mt-1 border-t border-white/10 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSemesterMenu(false);
+                            if (onOpenPromoteModal) onOpenPromoteModal();
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-bold text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-2"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>Promote to Next Semester...</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSemesterMenu(false);
+                            if (onOpenVault) onOpenVault();
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-medium text-indigo-300 hover:bg-indigo-500/10 transition-colors flex items-center gap-2"
+                        >
+                          <Award className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Open Academic Vault</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <span 
                   className="hidden md:inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-white/5 border-white/10 text-slate-300"
                   title={user.storageMode !== 'local' ? 'Data stored in local SQLite database (data/academiasync.db)' : 'Data stored safely in browser Local Storage'}
@@ -98,9 +229,9 @@ export function Header({
                 </span>
                 <span 
                   className="hidden lg:inline-flex text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full border bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
-                  title="AcademiaSync Universal App v2.0.0"
+                  title="AcademiaSync Universal App v2.1.0"
                 >
-                  v2.0
+                  v2.1
                 </span>
               </div>
               <p className="text-xs truncate max-w-[160px] sm:max-w-xs font-medium" style={{ color: currentTheme.textSecondary }}>

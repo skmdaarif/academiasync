@@ -1,4 +1,4 @@
-import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord } from '../types';
+import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType } from '../types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'academiasync_auth_token';
@@ -70,6 +70,8 @@ export function getLocalStudentData(userId: string): StudentData {
     timeSlots: [],
     tasks: [],
     attendanceRecords: [],
+    semesters: [],
+    activeSemesterNumber: 1,
     theme: 'dark-slate',
     activeView: 'dashboard',
   };
@@ -109,6 +111,8 @@ export interface RegisterPayload {
   semester: string;
   targetAttendance: number;
   staySignedIn?: boolean;
+  admissionType?: AdmissionType;
+  backfilledSemesters?: AcademicSemester[];
 }
 
 export async function apiRegister(payload: RegisterPayload): Promise<{ success: boolean; error?: string; token?: string; user?: UserAccount; data?: StudentData; mode: 'sqlite' | 'local' }> {
@@ -132,6 +136,9 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
 
   // Local Storage Account Creation Fallback
   const localId = `local_${Date.now()}`;
+  const parsedSem = parseInt(String(payload.semester).replace(/\D/g, ''), 10) || 1;
+  const admissionType = payload.admissionType || (parsedSem > 1 ? 'continuing' : 'fresh');
+
   const localUser: UserAccount = {
     id: localId,
     name: payload.name.trim(),
@@ -140,8 +147,10 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     collegeName: payload.collegeName || 'University',
     branch: payload.branch || 'Computer Science',
     degreeType: payload.degreeType || 'B.Tech / B.E.',
-    semester: payload.semester || 'Semester 1',
+    semester: payload.semester || `Semester ${parsedSem}`,
     totalSemesters: 8,
+    admissionType,
+    activeSemesterNumber: parsedSem,
     collegeMinAttendance: payload.targetAttendance || 75,
     personalGoalAttendance: Math.max(85, payload.targetAttendance || 75),
     targetAttendance: payload.targetAttendance || 75,
@@ -150,7 +159,26 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     storageMode: 'local',
   };
 
-  const blankData = getLocalStudentData(localId);
+  const initialSemesters: AcademicSemester[] = [];
+  if (Array.isArray(payload.backfilledSemesters) && payload.backfilledSemesters.length > 0) {
+    initialSemesters.push(...payload.backfilledSemesters);
+  }
+  initialSemesters.push({
+    id: `sem_${Date.now()}_${parsedSem}`,
+    userId: localId,
+    semesterNumber: parsedSem,
+    title: payload.semester || `Semester ${parsedSem}`,
+    status: 'active',
+    creditsEarned: 0,
+    startDate: new Date().toISOString().split('T')[0],
+  });
+
+  const blankData: StudentData = {
+    ...getLocalStudentData(localId),
+    semesters: initialSemesters,
+    activeSemesterNumber: parsedSem,
+  };
+
   saveLocalUser(localUser);
   saveLocalStudentData(localId, blankData);
 
@@ -228,13 +256,14 @@ export async function apiAddCourse(course: Omit<Course, 'id' | 'totalClasses' | 
   }
 
   const userId = course.userId || 'local_user';
+  const data = getLocalStudentData(userId);
   const newCourse: Course = {
     ...course,
     id: `c_${Date.now()}`,
+    semesterNumber: course.semesterNumber || data.activeSemesterNumber || 1,
     totalClasses: 0,
     attendedClasses: 0,
   };
-  const data = getLocalStudentData(userId);
   data.courses.push(newCourse);
   saveLocalStudentData(userId, data);
   return newCourse;
@@ -290,8 +319,12 @@ export async function apiAddSlot(slot: Omit<TimeSlot, 'id'>): Promise<TimeSlot> 
   }
 
   const userId = slot.userId || 'local_user';
-  const newSlot: TimeSlot = { ...slot, id: `s_${Date.now()}` };
   const data = getLocalStudentData(userId);
+  const newSlot: TimeSlot = {
+    ...slot,
+    id: `s_${Date.now()}`,
+    semesterNumber: slot.semesterNumber || data.activeSemesterNumber || 1,
+  };
   data.timeSlots.push(newSlot);
   saveLocalStudentData(userId, data);
   return newSlot;
@@ -345,12 +378,13 @@ export async function apiAddTask(task: Omit<Task, 'id' | 'createdAt'>): Promise<
   }
 
   const userId = task.userId || 'local_user';
+  const data = getLocalStudentData(userId);
   const newTask: Task = {
     ...task,
     id: `t_${Date.now()}`,
     createdAt: new Date().toISOString().split('T')[0],
+    semesterNumber: task.semesterNumber || data.activeSemesterNumber || 1,
   };
-  const data = getLocalStudentData(userId);
   data.tasks.unshift(newTask);
   saveLocalStudentData(userId, data);
   return newTask;
@@ -396,13 +430,14 @@ export async function apiLogAttendance(
   courseId: string, 
   status: AttendanceStatus,
   date?: string,
-  note?: string
+  note?: string,
+  semesterNumber?: number
 ): Promise<{ record: AttendanceRecord; updatedCourse: Course }> {
   try {
     const res = await fetch(`${API_BASE}/attendance`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ userId, courseId, status, date, note }),
+      body: JSON.stringify({ userId, courseId, status, date, note, semesterNumber }),
     });
     if (res.ok) return await res.json();
   } catch {
@@ -418,6 +453,7 @@ export async function apiLogAttendance(
     date: nowStr,
     status,
     note,
+    semesterNumber: semesterNumber || data.activeSemesterNumber || 1,
   };
   data.attendanceRecords.unshift(record);
 
@@ -615,5 +651,153 @@ export async function apiDeleteAccount(userId: string): Promise<void> {
   localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
   localStorage.removeItem(`${LOCAL_STORAGE_DATA_PREFIX}${userId}`);
   setAuthToken(null);
+}
+
+// ----------------------------------------------------------------------------
+// Academic Semesters & Vault API
+// ----------------------------------------------------------------------------
+
+export async function apiFetchSemesters(userId: string): Promise<AcademicSemester[]> {
+  try {
+    const res = await fetch(`${API_BASE}/semesters/${userId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Fallback to local storage
+  }
+
+  const localData = getLocalStudentData(userId);
+  return localData.semesters || [];
+}
+
+export async function apiBackfillSemesters(
+  userId: string,
+  semesters: AcademicSemester[]
+): Promise<{ success: boolean; semesters: AcademicSemester[] }> {
+  try {
+    const res = await fetch(`${API_BASE}/semesters/backfill`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ userId, semesters }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Fallback to local storage
+  }
+
+  const localData = getLocalStudentData(userId);
+  const currentList = localData.semesters || [];
+
+  for (const s of semesters) {
+    const idx = currentList.findIndex((item) => item.semesterNumber === s.semesterNumber);
+    if (idx !== -1) {
+      currentList[idx] = { ...currentList[idx], ...s };
+    } else {
+      currentList.push({
+        ...s,
+        id: s.id || `sem_${Date.now()}_${s.semesterNumber}`,
+        userId,
+      });
+    }
+  }
+  currentList.sort((a, b) => a.semesterNumber - b.semesterNumber);
+  localData.semesters = currentList;
+  saveLocalStudentData(userId, localData);
+
+  return { success: true, semesters: currentList };
+}
+
+export async function apiPromoteSemester(
+  userId: string,
+  nextSemesterNumber: number,
+  currentSemSummary: { finalAttendancePct?: number; creditsEarned: number; sgpa?: number; notes?: string }
+): Promise<{ success: boolean; user?: UserAccount; data?: StudentData }> {
+  try {
+    const res = await fetch(`${API_BASE}/semesters/promote`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ userId, nextSemesterNumber, currentSemSummary }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Fallback to local storage
+  }
+
+  // Local storage promotion logic
+  const localData = getLocalStudentData(userId);
+  const localUsers = getLocalUsers();
+  const userIdx = localUsers.findIndex((u) => u.id === userId);
+  const currUser = userIdx !== -1 ? localUsers[userIdx] : null;
+
+  const currSemNumber = currUser?.activeSemesterNumber || (nextSemesterNumber - 1);
+  const today = new Date().toISOString().split('T')[0];
+
+  const semesters = localData.semesters || [];
+  const activeIdx = semesters.findIndex((s) => s.semesterNumber === currSemNumber);
+  if (activeIdx !== -1) {
+    semesters[activeIdx] = {
+      ...semesters[activeIdx],
+      status: 'archived',
+      endDate: today,
+      finalAttendancePct: currentSemSummary.finalAttendancePct,
+      creditsEarned: currentSemSummary.creditsEarned,
+      sgpa: currentSemSummary.sgpa,
+      notes: currentSemSummary.notes,
+    };
+  } else {
+    semesters.push({
+      id: `sem_${Date.now()}_${currSemNumber}`,
+      userId,
+      semesterNumber: currSemNumber,
+      title: `Semester ${currSemNumber}`,
+      status: 'archived',
+      endDate: today,
+      finalAttendancePct: currentSemSummary.finalAttendancePct,
+      creditsEarned: currentSemSummary.creditsEarned,
+      sgpa: currentSemSummary.sgpa,
+      notes: currentSemSummary.notes,
+    });
+  }
+
+  const nextIdx = semesters.findIndex((s) => s.semesterNumber === nextSemesterNumber);
+  if (nextIdx !== -1) {
+    semesters[nextIdx].status = 'active';
+    semesters[nextIdx].startDate = today;
+  } else {
+    semesters.push({
+      id: `sem_${Date.now()}_${nextSemesterNumber}`,
+      userId,
+      semesterNumber: nextSemesterNumber,
+      title: `Semester ${nextSemesterNumber}`,
+      status: 'active',
+      startDate: today,
+      creditsEarned: 0,
+    });
+  }
+
+  semesters.sort((a, b) => a.semesterNumber - b.semesterNumber);
+
+  localData.semesters = semesters;
+  localData.activeSemesterNumber = nextSemesterNumber;
+
+  if (currUser) {
+    currUser.activeSemesterNumber = nextSemesterNumber;
+    currUser.semester = `Semester ${nextSemesterNumber}`;
+    saveLocalUser(currUser);
+  }
+  saveLocalStudentData(userId, localData);
+
+  return {
+    success: true,
+    user: currUser || undefined,
+    data: localData,
+  };
 }
 
