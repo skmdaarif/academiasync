@@ -96,6 +96,12 @@ export function Header({
                 >
                   {user.storageMode !== 'local' ? '🗄️ SQLite DB' : '🟢 Local Storage'}
                 </span>
+                <span 
+                  className="hidden lg:inline-flex text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full border bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                  title="AcademiaSync Universal App v2.0.0"
+                >
+                  v2.0
+                </span>
               </div>
               <p className="text-xs truncate max-w-[160px] sm:max-w-xs font-medium" style={{ color: currentTheme.textSecondary }}>
                 {user.collegeName} • {user.branch}

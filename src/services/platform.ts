@@ -27,6 +27,10 @@ export function isBrowser(): boolean {
   return !isNativeApp();
 }
 
+export function getAppVersion(): string {
+  return '2.0.0';
+}
+
 export function getPlatformCapabilities(): PlatformCapabilities {
   const isNative = isNativeApp();
   const isMobileDevice = typeof window !== 'undefined' && (
