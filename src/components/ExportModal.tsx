@@ -23,9 +23,10 @@ interface ExportModalProps {
   state: StudentData;
   onClose: () => void;
   onRestoreState: (newState: StudentData) => void;
+  onOpenPdfImport?: () => void;
 }
 
-export function ExportModal({ user, state, onClose, onRestoreState }: ExportModalProps) {
+export function ExportModal({ user, state, onClose, onRestoreState, onOpenPdfImport }: ExportModalProps) {
   const [activeTab, setActiveTab] = useState<'calendar' | 'backup' | 'database'>('calendar');
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [importError, setImportError] = useState('');
@@ -254,6 +255,30 @@ WHERE user_id = '${user.id}';`;
         {/* TAB 2: JSON BACKUP / RESTORE */}
         {activeTab === 'backup' && (
           <div className="space-y-4">
+            {onOpenPdfImport && (
+              <div className="p-5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-sm text-white flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    Auto-Scan Timetable PDF
+                  </h4>
+                  <p className="text-xs text-slate-300 mt-1 max-w-md">
+                    Upload an official university timetable PDF to automatically detect courses, credits, faculty names, room numbers, and weekly matrix slots.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenPdfImport();
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md shrink-0 flex items-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Launch PDF Scanner
+                </button>
+              </div>
+            )}
+
             <div className="p-5 rounded-2xl bg-white/5 border border-white/10">
               <h4 className="font-bold text-sm mb-1" style={{ color: theme.textPrimary }}>
                 Download Personal JSON Backup

@@ -25,13 +25,15 @@ import {
   BookOpen,
   X,
   Printer,
-  CalendarDays
+  CalendarDays,
+  FileText
 } from 'lucide-react';
 
 interface TimetableGridProps {
   state: StudentData;
   onOpenAddSlot: () => void;
   onOpenAddCourse: () => void;
+  onOpenPdfImport?: () => void;
   onEditSlot: (slot: TimeSlot) => void;
   onDeleteSlot: (slotId: string) => void;
   onUpdateCourse?: (course: Course) => void;
@@ -55,6 +57,7 @@ export function TimetableGrid({
   state,
   onOpenAddSlot,
   onOpenAddCourse,
+  onOpenPdfImport,
   onEditSlot,
   onDeleteSlot,
   onUpdateCourse,
@@ -122,14 +125,24 @@ export function TimetableGrid({
         <p className="text-xs sm:text-sm max-w-sm mx-auto mt-1" style={{ color: theme.textSecondary }}>
           You need to register at least one subject before scheduling your weekly class timetable slots.
         </p>
-        <button
-          onClick={onOpenAddCourse}
-          className="mt-5 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-md hover:scale-105 transition-all"
-          style={{ backgroundColor: theme.accent }}
-        >
-          <Plus className="w-4 h-4 inline mr-1" />
-          Register Your First Course
-        </button>
+        <div className="flex items-center justify-center gap-3 mt-6 flex-wrap">
+          {onOpenPdfImport && (
+            <button
+              onClick={onOpenPdfImport}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg hover:scale-105 transition-all flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600"
+            >
+              <Sparkles className="w-4 h-4" />
+              Auto-Scan Timetable PDF (1-Click)
+            </button>
+          )}
+          <button
+            onClick={onOpenAddCourse}
+            className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-200 border border-white/15 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4 inline" />
+            Manually Register Course
+          </button>
+        </div>
       </div>
     );
   }
@@ -268,6 +281,18 @@ export function TimetableGrid({
             <Printer className="w-3.5 h-3.5" />
             Print
           </button>
+
+          {onOpenPdfImport && (
+            <button
+              type="button"
+              onClick={onOpenPdfImport}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 hover:text-white transition-colors"
+              title="Upload University Timetable PDF to auto-populate courses & slots"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Scan PDF
+            </button>
+          )}
 
           <button
             onClick={onOpenAddCourse}

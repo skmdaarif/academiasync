@@ -39,6 +39,7 @@ import { ExamCountdownHub } from './components/ExamCountdownHub';
 import { AddModal } from './components/AddModal';
 import { ExportModal } from './components/ExportModal';
 import { SettingsModal } from './components/SettingsModal';
+import { PdfImportModal } from './components/PdfImportModal';
 import { EmptyState } from './components/EmptyState';
 import { getTodayDayName } from './utils/timeUtils';
 
@@ -71,6 +72,7 @@ export function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAttendanceHistory, setShowAttendanceHistory] = useState(false);
+  const [showPdfImportModal, setShowPdfImportModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -457,6 +459,42 @@ export function App() {
     }
   };
 
+  // Auto-Scan Timetable PDF Importer Handler
+  const handleApplyPdfImport = async (
+    newCourses: Course[],
+    newSlots: TimeSlot[],
+    updatedProfile?: Partial<UserAccount>
+  ) => {
+    if (!currentUser) return;
+
+    const mergedState: StudentData = {
+      ...state,
+      courses: newCourses,
+      timeSlots: newSlots,
+    };
+
+    setState(mergedState);
+
+    try {
+      await apiRestoreStudentData(currentUser.id, mergedState);
+    } catch (err) {
+      console.error('Failed to sync imported PDF timetable to database:', err);
+    }
+
+    if (updatedProfile && Object.keys(updatedProfile).length > 0) {
+      const updatedUser: UserAccount = { ...currentUser, ...updatedProfile };
+      setCurrentUser(updatedUser);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
+      try {
+        await apiUpdateProfile(updatedUser);
+      } catch (err) {
+        console.error('Failed to update student profile from PDF metadata:', err);
+      }
+    }
+
+    showToast(`Successfully imported ${newCourses.length} courses & ${newSlots.length} timetable slots!`, 'success');
+  };
+
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-300">
       
@@ -562,6 +600,7 @@ export function App() {
               state={state}
               onOpenAddSlot={() => setAddModalType('slot')}
               onOpenAddCourse={() => setAddModalType('course')}
+              onOpenPdfImport={() => setShowPdfImportModal(true)}
               onEditSlot={(slot) => setEditingSlot(slot)}
               onDeleteSlot={handleDeleteSlot}
               onUpdateCourse={handleUpdateCourse}
@@ -662,6 +701,16 @@ export function App() {
           state={state}
           onClose={() => setShowExportModal(false)}
           onRestoreState={(restored) => setState(restored)}
+          onOpenPdfImport={() => setShowPdfImportModal(true)}
+        />
+      )}
+
+      {showPdfImportModal && (
+        <PdfImportModal
+          user={currentUser}
+          state={state}
+          onClose={() => setShowPdfImportModal(false)}
+          onApplyImport={handleApplyPdfImport}
         />
       )}
 

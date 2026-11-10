@@ -63,6 +63,15 @@ Switch effortlessly between bespoke color palettes with smooth transitions:
 - **Print / PDF Sheet**: Formats clean, print-ready schedule overviews using `jspdf` and `html2canvas`.
 - **JSON Backup & Restore**: Download encrypted offline JSON snapshots and restore state anytime.
 
+### 📑 8. 1-Click Timetable PDF Scanner & Auto-Populator
+- **Automatic PDF Schedule Ingestion**: Upload an official university or college schedule PDF (e.g. LPU or university ERP exports) to populate all courses and weekly timetable slots in under 2 seconds.
+- **Intelligent Entity Extraction**:
+  - Course Catalog: Course codes, full titles, credits, faculty names, and default lecture rooms.
+  - Weekly Matrix: Monday through Sunday periods, start/end times in 24h format, and classroom numbers.
+  - Student Profile: Auto-detects student registration VID and home section.
+- **Lab Batch Group Filtering**: Lets students choose their assigned lab group (e.g., `Group 1`, `Group 2`, or `All`) to automatically exclude other batches' practical sessions.
+- **100% Private & Local**: Client-side parsing using Mozilla `pdfjs-dist` with zero external cloud APIs or data transmission.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -75,7 +84,8 @@ Switch effortlessly between bespoke color palettes with smooth transitions:
 | **Styling** | [Tailwind CSS v4](https://tailwindcss.com) | Modern utility-first CSS design system |
 | **Icons** | [Lucide React](https://lucide.dev) | Comprehensive, clean icon set |
 | **Backend** | [Express 5](https://expressjs.com) | Node.js REST API with modular routing |
-| **Database** | [PostgreSQL 13+](https://www.postgresql.org) | Relational database with UUIDs and analytic views |
+| **Database** | [SQLite 3 (better-sqlite3)](https://www.sqlite.org) | Embedded zero-config local database with WAL mode & atomic transactions |
+| **PDF Processing** | [PDF.js (pdfjs-dist)](https://mozilla.github.io/pdf.js/) | Fast client-side timetable extraction & spatial grid parsing |
 | **Security** | [BcryptJS](https://www.npmjs.com/package/bcryptjs) | Password hashing with salt generation |
 | **Utilities** | `date-fns`, `canvas-confetti`, `jspdf` | Date math, celebratory UI, and document generation |
 

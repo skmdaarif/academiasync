@@ -13,6 +13,8 @@ export interface UserAccount {
   degreeType: string;
   semester: string;
   totalSemesters: number;
+  rollNumber?: string; // University Roll Number or Student VID
+  vid?: string; // Alias for student VID
   semesterStartDate?: string; // e.g. "2026-08-01"
   collegeMinAttendance: number; // e.g. 75% set by University
   personalGoalAttendance: number; // e.g. 90% custom student target (>= collegeMinAttendance)
