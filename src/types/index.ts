@@ -32,6 +32,7 @@ export interface UserAccount {
   totalSemesters: number;
   rollNumber?: string; // University Roll Number or Student VID
   vid?: string; // Alias for student VID
+  studentBatch?: string; // e.g. "Batch A", "B1", "Section 2"
   admissionType?: AdmissionType;
   activeSemesterNumber?: number;
   semesterStartDate?: string; // e.g. "2026-08-01"
@@ -61,6 +62,8 @@ export interface Course {
   semesterNumber?: number;
 }
 
+export type SlotRecurrence = 'all' | 'odd_weeks' | 'even_weeks';
+
 export interface TimeSlot {
   id: string;
   userId?: string;
@@ -70,6 +73,10 @@ export interface TimeSlot {
   endTime: string;   // "10:00"
   room?: string;
   type: SlotType;
+  recurrence?: SlotRecurrence;
+  isOneOff?: boolean;
+  specificDate?: string; // YYYY-MM-DD
+  batch?: string; // e.g. "B1", "B2"
   notes?: string;
   meetingLink?: string;
   semesterNumber?: number;
@@ -111,6 +118,7 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
   slotId?: string;
   note?: string;
+  documentRef?: string; // Certificate / Proof Link / OD Token
   semesterNumber?: number;
 }
 

@@ -51,17 +51,66 @@ export interface CurrentClassStatus {
   timeUntilNext: number; // Minutes until next class starts
 }
 
+/**
+ * Determines whether a time slot takes place on a given calendar date,
+ * respecting:
+ * 1. One-off makeup/extra sessions (specificDate must match targetDate)
+ * 2. Weekly vs Odd-week vs Even-week recurrence (based on week index from semesterStartDate)
+ */
+export function isSlotActiveOnDate(
+  slot: TimeSlot,
+  targetDate: Date,
+  semesterStartDate?: string
+): boolean {
+  const targetDateStr = targetDate.toISOString().split('T')[0];
+
+  // 1. One-Off Makeup Class
+  if (slot.isOneOff) {
+    return slot.specificDate === targetDateStr;
+  }
+
+  // If slot has a specific date but is not marked one-off, check if it matches
+  if (slot.specificDate && slot.specificDate !== targetDateStr) {
+    return false;
+  }
+
+  // 2. Day of Week Check
+  const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'long' }) as DayOfWeek;
+  if (slot.day !== dayName) return false;
+
+  // 3. Recurrence Check (odd_weeks vs even_weeks)
+  if (!slot.recurrence || slot.recurrence === 'all') {
+    return true;
+  }
+
+  // Compute week number from semesterStartDate or start of current year
+  const baseDate = semesterStartDate ? new Date(semesterStartDate) : new Date(targetDate.getFullYear(), 0, 1);
+  const diffMs = targetDate.getTime() - baseDate.getTime();
+  const weekNumber = Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1);
+
+  const isOddWeek = weekNumber % 2 !== 0;
+
+  if (slot.recurrence === 'odd_weeks') {
+    return isOddWeek;
+  }
+  if (slot.recurrence === 'even_weeks') {
+    return !isOddWeek;
+  }
+
+  return true;
+}
+
 export function getCurrentAndNextClass(
   slots: TimeSlot[],
   courses: Course[],
-  currentTime: Date = new Date()
+  currentTime: Date = new Date(),
+  semesterStartDate?: string
 ): CurrentClassStatus {
-  const today = getTodayDayName();
   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
-  // Filter slots for today and sort by start time
+  // Filter slots for today respecting one-offs and odd/even week recurrence
   const todaySlots = slots
-    .filter((s) => s.day === today)
+    .filter((s) => isSlotActiveOnDate(s, currentTime, semesterStartDate))
     .sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
 
   let currentSlot: TimeSlot | null = null;

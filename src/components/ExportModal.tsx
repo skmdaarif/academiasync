@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StudentData, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
-import { generateTimetableICS, generateTasksICS, downloadFile } from '../utils/calendarExport';
+import { generateTimetableICS, generateTasksICS, generateExamsICS, downloadFile } from '../utils/calendarExport';
 import { apiRestoreStudentData } from '../services/api';
 import { 
   X, 
@@ -15,7 +15,8 @@ import {
   Printer, 
   ShieldAlert,
   Sparkles,
-  Loader2
+  Loader2,
+  Flame
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -43,6 +44,11 @@ export function ExportModal({ user, state, onClose, onRestoreState, onOpenPdfImp
   const handleExportTasksICS = () => {
     const icsContent = generateTasksICS(state.tasks, state.courses);
     downloadFile(icsContent, `student_tasks_${user.name.toLowerCase().replace(/\s+/g, '_')}.ics`);
+  };
+
+  const handleExportExamsICS = () => {
+    const icsContent = generateExamsICS(state.exams || [], state.courses);
+    downloadFile(icsContent, `university_exams_${user.name.toLowerCase().replace(/\s+/g, '_')}.ics`);
   };
 
   const handleExportJSON = () => {
@@ -229,6 +235,33 @@ WHERE user_id = '${user.id}';`;
                 </button>
               </div>
 
+              {/* Exams & Vivas iCal */}
+              <div className="p-5 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between sm:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                      <Flame className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm" style={{ color: theme.textPrimary }}>
+                        Sync Exams & Vivas (.ics)
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Exports all Mid-Terms (MTT), End-Terms (ETT), Continuous Assessments, and Lab Vivas with 24-hour and 2-hour alarm reminders.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleExportExamsICS}
+                    disabled={!state.exams || state.exams.length === 0}
+                    className="py-2 px-4 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download Exams .ics ({state.exams?.length || 0})
+                  </button>
+                </div>
+              </div>
+
             </div>
 
             {/* Print Timetable */}
@@ -284,7 +317,7 @@ WHERE user_id = '${user.id}';`;
                 Download Personal JSON Backup
               </h4>
               <p className="text-xs text-slate-400 mb-4">
-                Exports your registered courses, timetable slots, attendance counts, and tasks into a portable backup file.
+                Exports your complete academic record: courses, timetable slots, attendance tallies, ERP baselines, university exams, and multi-semester vault history.
               </p>
               <button
                 onClick={handleExportJSON}

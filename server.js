@@ -187,12 +187,18 @@ function ensureColumn(table, column, definition) {
 ensureColumn('users', 'admission_type', "TEXT DEFAULT 'fresh'");
 ensureColumn('users', 'active_semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('users', 'semester_start_date', 'TEXT');
+ensureColumn('users', 'student_batch', 'TEXT');
 ensureColumn('courses', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('courses', 'baseline_classes_held', 'INTEGER DEFAULT 0');
 ensureColumn('courses', 'baseline_attended_classes', 'INTEGER DEFAULT 0');
 ensureColumn('time_slots', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('time_slots', 'recurrence', "TEXT DEFAULT 'all'");
+ensureColumn('time_slots', 'is_one_off', 'INTEGER DEFAULT 0');
+ensureColumn('time_slots', 'specific_date', 'TEXT');
+ensureColumn('time_slots', 'batch', 'TEXT');
 ensureColumn('tasks', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('attendance_records', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('attendance_records', 'document_ref', 'TEXT');
 
 console.log('✅ SQLite relational schema, multi-semester tables, exams & migrations verified.');
 
@@ -265,15 +271,24 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     ORDER BY created_at ASC
   `).all(userId);
 
-  const timeSlots = db.prepare(`
+  const timeSlotsRaw = db.prepare(`
     SELECT id, course_id as courseId, day_of_week as day,
            start_time as startTime, end_time as endTime, room,
            slot_type as type, notes, meeting_link as meetingLink,
+           COALESCE(recurrence, 'all') as recurrence,
+           (is_one_off = 1) as isOneOff,
+           specific_date as specificDate,
+           batch,
            COALESCE(semester_number, 1) as semesterNumber
     FROM time_slots
     WHERE user_id = ?
     ORDER BY start_time ASC
   `).all(userId);
+
+  const timeSlots = timeSlotsRaw.map((s) => ({
+    ...s,
+    isOneOff: Boolean(s.isOneOff),
+  }));
 
   const tasksRaw = db.prepare(`
     SELECT id, course_id as courseId, title, description,
@@ -307,7 +322,8 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   }));
 
   const attendanceRecords = db.prepare(`
-    SELECT id, course_id as courseId, log_date as date, status, note, time_slot_id as slotId,
+    SELECT id, course_id as courseId, log_date as date, status, note, document_ref as documentRef,
+           time_slot_id as slotId,
            COALESCE(semester_number, 1) as semesterNumber
     FROM attendance_records
     WHERE user_id = ?
@@ -989,7 +1005,21 @@ app.delete('/api/courses/:id', requireAuth, (req, res) => {
 // Add Time Slot
 app.post('/api/slots', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, day, startTime, endTime, room, type, notes, semesterNumber } = req.body;
+    const { 
+      userId, 
+      courseId, 
+      day, 
+      startTime, 
+      endTime, 
+      room, 
+      type, 
+      notes, 
+      recurrence,
+      isOneOff,
+      specificDate,
+      batch,
+      semesterNumber 
+    } = req.body;
     const effectiveUserId = req.user.id || userId;
     const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
     const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
@@ -997,8 +1027,9 @@ app.post('/api/slots', requireAuth, (req, res) => {
 
     db.prepare(`
       INSERT INTO time_slots (
-        id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes, semester_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes,
+        recurrence, is_one_off, specific_date, batch, semester_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       slotId,
       effectiveUserId,
@@ -1009,16 +1040,26 @@ app.post('/api/slots', requireAuth, (req, res) => {
       room || null,
       type || 'Lecture',
       notes || null,
+      recurrence || 'all',
+      isOneOff ? 1 : 0,
+      specificDate || null,
+      batch || null,
       semNumber
     );
 
     const created = db.prepare(`
       SELECT id, course_id as courseId, day_of_week as day,
              start_time as startTime, end_time as endTime, room,
-             slot_type as type, notes, COALESCE(semester_number, 1) as semesterNumber
+             slot_type as type, notes,
+             COALESCE(recurrence, 'all') as recurrence,
+             (is_one_off = 1) as isOneOff,
+             specific_date as specificDate,
+             batch,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM time_slots WHERE id = ?
     `).get(slotId);
 
+    created.isOneOff = Boolean(created.isOneOff);
     res.status(201).json(created);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1029,7 +1070,7 @@ app.post('/api/slots', requireAuth, (req, res) => {
 app.put('/api/slots/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    const { courseId, day, startTime, endTime, room, type, notes } = req.body;
+    const { courseId, day, startTime, endTime, room, type, notes, recurrence, isOneOff, specificDate, batch } = req.body;
 
     const existing = db.prepare('SELECT * FROM time_slots WHERE id = ? AND user_id = ?').get(id, req.user.id);
     if (!existing) {
@@ -1044,7 +1085,11 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
           end_time = COALESCE(?, end_time),
           room = ?,
           slot_type = COALESCE(?, slot_type),
-          notes = ?
+          notes = ?,
+          recurrence = COALESCE(?, recurrence),
+          is_one_off = ?,
+          specific_date = ?,
+          batch = ?
       WHERE id = ? AND user_id = ?
     `).run(
       courseId || null,
@@ -1054,6 +1099,10 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
       room !== undefined ? room : existing.room,
       type || null,
       notes !== undefined ? notes : existing.notes,
+      recurrence || null,
+      isOneOff !== undefined ? (isOneOff ? 1 : 0) : existing.is_one_off,
+      specificDate !== undefined ? specificDate : existing.specific_date,
+      batch !== undefined ? batch : existing.batch,
       id,
       req.user.id
     );
@@ -1061,12 +1110,21 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
     const updated = db.prepare(`
       SELECT id, course_id as courseId, day_of_week as day,
              start_time as startTime, end_time as endTime, room,
-             slot_type as type, notes
+             slot_type as type, notes,
+             COALESCE(recurrence, 'all') as recurrence,
+             (is_one_off = 1) as isOneOff,
+             specific_date as specificDate,
+             batch,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM time_slots WHERE id = ?
     `).get(id);
 
+    updated.isOneOff = Boolean(updated.isOneOff);
     res.json(updated);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
     res.status(500).json({ error: err.message });
   }
 });
@@ -1227,7 +1285,7 @@ app.delete('/api/tasks/:id', requireAuth, (req, res) => {
 // Log Attendance (Atomic Transaction)
 app.post('/api/attendance', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, status, date, note, semesterNumber } = req.body;
+    const { userId, courseId, status, date, note, documentRef, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
     const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
     const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
@@ -1242,9 +1300,9 @@ app.post('/api/attendance', requireAuth, (req, res) => {
 
     const logTx = db.transaction(() => {
       db.prepare(`
-        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, semester_number)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null, semNumber);
+        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, document_ref, semester_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null, documentRef || null, semNumber);
 
       if (heldIncrement > 0) {
         db.prepare(`
@@ -1259,7 +1317,8 @@ app.post('/api/attendance', requireAuth, (req, res) => {
     logTx();
 
     const record = db.prepare(`
-      SELECT id, course_id as courseId, log_date as date, status, note, COALESCE(semester_number, 1) as semesterNumber
+      SELECT id, course_id as courseId, log_date as date, status, note, document_ref as documentRef,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM attendance_records WHERE id = ?
     `).get(recordId);
 

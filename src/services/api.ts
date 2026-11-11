@@ -532,13 +532,14 @@ export async function apiLogAttendance(
   status: AttendanceStatus,
   date?: string,
   note?: string,
-  semesterNumber?: number
+  semesterNumber?: number,
+  documentRef?: string
 ): Promise<{ record: AttendanceRecord; updatedCourse: Course }> {
   try {
     const res = await fetch(`${API_BASE}/attendance`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ userId, courseId, status, date, note, semesterNumber }),
+      body: JSON.stringify({ userId, courseId, status, date, note, semesterNumber, documentRef }),
     });
     if (res.ok) return await res.json();
   } catch {
@@ -554,6 +555,7 @@ export async function apiLogAttendance(
     date: nowStr,
     status,
     note,
+    documentRef,
     semesterNumber: semesterNumber || data.activeSemesterNumber || 1,
   };
   data.attendanceRecords.unshift(record);

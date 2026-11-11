@@ -1,4 +1,4 @@
-import { TimeSlot, Course, Task } from '../types';
+import { TimeSlot, Course, Task, Exam } from '../types';
 
 /**
  * Generates an iCalendar (.ics) string for recurring weekly class timetable
@@ -140,6 +140,75 @@ export function generateTasksICS(tasks: Task[], courses: Course[]): string {
     ics.push(`DTEND:${dtString}`);
     ics.push(`SUMMARY:[${task.category.toUpperCase()}] ${task.title}${course ? ` (${course.code})` : ''}`);
     ics.push(`DESCRIPTION:${task.description || ''}\\nPriority: ${task.priority.toUpperCase()}`);
+    ics.push('END:VEVENT');
+  });
+
+  ics.push('END:VCALENDAR');
+  return ics.join('\r\n');
+}
+
+/**
+ * Exports University Examinations & Vivas as an ICS calendar file with alarm notifications
+ */
+export function generateExamsICS(exams: Exam[], courses: Course[]): string {
+  const courseMap = new Map(courses.map((c) => [c.id, c]));
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//AcademiaSync//University Exams & Vivas//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:University Examinations & Vivas',
+  ];
+
+  const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
+
+  exams.forEach((exam) => {
+    const course = exam.courseId ? courseMap.get(exam.courseId) : null;
+    const startTime = exam.startTime || '09:00';
+    const endTime = exam.endTime || '12:00';
+    const [y, m, d] = exam.examDate.split('-').map(Number);
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+
+    const dtStart = `${y}${pad(m)}${pad(d)}T${pad(sh)}${pad(sm)}00`;
+    const dtEnd = `${y}${pad(m)}${pad(d)}T${pad(eh)}${pad(em)}00`;
+
+    const unitsSummary = (exam.syllabusUnits || []).map((u) => `- ${u.title}`).join('\\n');
+    const descParts = [
+      `Category: ${exam.examCategory.toUpperCase()} (${exam.examType.toUpperCase()})`,
+      course ? `Course: ${course.name} (${course.code})` : '',
+      exam.maxMarks ? `Max Marks: ${exam.maxMarks}` : '',
+      unitsSummary ? `Syllabus Units:\\n${unitsSummary}` : '',
+      exam.notes ? `Notes: ${exam.notes}` : '',
+    ].filter(Boolean);
+
+    ics.push('BEGIN:VEVENT');
+    ics.push(`UID:exam-${exam.id}@academiasync.local`);
+    ics.push(`DTSTAMP:${dtStart}Z`);
+    ics.push(`DTSTART:${dtStart}`);
+    ics.push(`DTEND:${dtEnd}`);
+    ics.push(`SUMMARY:[${exam.examCategory.toUpperCase()}] ${exam.title}${course ? ` (${course.code})` : ''}`);
+    ics.push(`DESCRIPTION:${descParts.join('\\n')}`);
+    if (exam.roomOrLab) {
+      ics.push(`LOCATION:${exam.roomOrLab}`);
+    }
+
+    // 24-Hour Prior Reminder Alarm
+    ics.push('BEGIN:VALARM');
+    ics.push('ACTION:DISPLAY');
+    ics.push(`DESCRIPTION:Upcoming Exam Tomorrow: ${exam.title}`);
+    ics.push('TRIGGER:-P1D');
+    ics.push('END:VALARM');
+
+    // 2-Hour Prior Reminder Alarm
+    ics.push('BEGIN:VALARM');
+    ics.push('ACTION:DISPLAY');
+    ics.push(`DESCRIPTION:Exam in 2 Hours: ${exam.title} (${exam.roomOrLab || 'Room TBA'})`);
+    ics.push('TRIGGER:-PT2H');
+    ics.push('END:VALARM');
+
     ics.push('END:VEVENT');
   });
 

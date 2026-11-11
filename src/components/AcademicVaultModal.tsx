@@ -54,6 +54,25 @@ export function AcademicVaultModal({
   const [editNotes, setEditNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [successToast, setSuccessToast] = useState(false);
+  const [showSgpaSimulator, setShowSgpaSimulator] = useState(false);
+
+  const activeSemNumber = user.activeSemesterNumber || 1;
+  const activeCourses = state.courses.filter((c) => (c.semesterNumber || 1) === activeSemNumber);
+  const [predictedGrades, setPredictedGrades] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    activeCourses.forEach((c) => {
+      initial[c.id] = 8; // Default 'A' (8.0 grade point)
+    });
+    return initial;
+  });
+
+  // Calculate Predicted SGPA
+  const simTotalCredits = activeCourses.reduce((acc, c) => acc + (c.credits || 3), 0);
+  const simWeightedPoints = activeCourses.reduce((acc, c) => {
+    const gp = predictedGrades[c.id] !== undefined ? predictedGrades[c.id] : 8;
+    return acc + (c.credits || 3) * gp;
+  }, 0);
+  const simulatedSgpa = simTotalCredits > 0 ? Math.round((simWeightedPoints / simTotalCredits) * 100) / 100 : null;
 
   // Compute Degree Lifetime Stats
   const totalCredits = semestersList.reduce((acc, s) => acc + (s.creditsEarned || 0), 0);
@@ -64,8 +83,11 @@ export function AcademicVaultModal({
     : 0;
 
   const semestersWithSgpa = semestersList.filter((s) => s.sgpa !== undefined && s.sgpa !== null && s.sgpa > 0);
+  const totalWeightedCredits = semestersWithSgpa.reduce((acc, s) => acc + (s.creditsEarned || 0), 0);
   const cgpa = semestersWithSgpa.length > 0
-    ? semestersWithSgpa.reduce((acc, s) => acc + (s.sgpa || 0), 0) / semestersWithSgpa.length
+    ? totalWeightedCredits > 0
+      ? semestersWithSgpa.reduce((acc, s) => acc + (s.sgpa || 0) * (s.creditsEarned || 0), 0) / totalWeightedCredits
+      : semestersWithSgpa.reduce((acc, s) => acc + (s.sgpa || 0), 0) / semestersWithSgpa.length
     : null;
 
   const handleStartEdit = (sem: AcademicSemester) => {
@@ -209,6 +231,97 @@ export function AcademicVaultModal({
               Current: Sem {user.activeSemesterNumber || 1}
             </span>
           </div>
+        </div>
+
+        {/* Active Semester SGPA Simulator & Forecast */}
+        <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-bold text-white">
+                Semester {activeSemNumber} SGPA Forecast & Simulator
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSgpaSimulator(!showSgpaSimulator)}
+              className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300"
+            >
+              {showSgpaSimulator ? 'Collapse ▲' : 'Simulate Grades ▼'}
+            </button>
+          </div>
+
+          {showSgpaSimulator && (
+            <div className="mt-3 space-y-3 pt-3 border-t border-white/5">
+              <p className="text-[11px] text-slate-300">
+                Assign your projected letter grades to active courses to simulate your term SGPA ({simTotalCredits} total credits):
+              </p>
+
+              {activeCourses.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {activeCourses.map((c) => (
+                    <div key={c.id} className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-white block">{c.code}</span>
+                        <span className="text-[10px] text-slate-400">{c.credits || 3} Credits</span>
+                      </div>
+
+                      <select
+                        value={predictedGrades[c.id] ?? 8}
+                        onChange={(e) => setPredictedGrades({ ...predictedGrades, [c.id]: Number(e.target.value) })}
+                        className="text-xs font-bold px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-amber-400 focus:outline-none"
+                      >
+                        <option value="10">O (10.0)</option>
+                        <option value="9">A+ (9.0)</option>
+                        <option value="8">A (8.0)</option>
+                        <option value="7">B+ (7.0)</option>
+                        <option value="6">B (6.0)</option>
+                        <option value="5">C (5.0)</option>
+                        <option value="4">P (4.0)</option>
+                        <option value="0">F (0.0)</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No courses registered in active semester yet.</p>
+              )}
+
+              {simulatedSgpa !== null && activeCourses.length > 0 && (
+                <div className="p-3 rounded-xl bg-black/40 border border-indigo-500/30 flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-semibold">
+                      Forecasted Sem {activeSemNumber} SGPA
+                    </span>
+                    <span className="text-lg font-black text-amber-400 font-mono">
+                      {simulatedSgpa.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const activeSemIdx = semestersList.findIndex((s) => s.semesterNumber === activeSemNumber);
+                      if (activeSemIdx !== -1) {
+                        const updated = [...semestersList];
+                        updated[activeSemIdx] = {
+                          ...updated[activeSemIdx],
+                          sgpa: simulatedSgpa,
+                          creditsEarned: simTotalCredits,
+                        };
+                        await onUpdateSemesters(updated);
+                        setSuccessToast(true);
+                        setTimeout(() => setSuccessToast(false), 2000);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow transition-all"
+                  >
+                    Save as Sem {activeSemNumber} SGPA
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Semesters History Timeline */}

@@ -453,6 +453,21 @@ export function TimetableGrid({
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-white/10 text-slate-300">
                         {slot.type}
                       </span>
+                      {slot.recurrence && slot.recurrence !== 'all' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          {slot.recurrence === 'odd_weeks' ? 'Odd Weeks' : 'Even Weeks'}
+                        </span>
+                      )}
+                      {slot.isOneOff && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          ⚡ Makeup {slot.specificDate ? `(${slot.specificDate})` : ''}
+                        </span>
+                      )}
+                      {slot.batch && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          {slot.batch}
+                        </span>
+                      )}
                       {slot.notes && (
                         <span className="text-[11px] text-amber-300 bg-amber-950/30 px-2 py-0.5 rounded border border-amber-500/20">
                           📌 {slot.notes}
@@ -668,9 +683,21 @@ export function TimetableGrid({
                               {course.name}
                             </p>
 
-                            <div className="flex items-center justify-between mt-2 text-[10px]" style={{ color: theme.textSecondary }}>
+                            <div className="flex items-center justify-between mt-2 text-[10px] gap-1 flex-wrap" style={{ color: theme.textSecondary }}>
                               <span>📍 {slot.room || course.defaultRoom || 'TBA'}</span>
-                              <span className="font-medium text-slate-300">{slot.type}</span>
+                              <div className="flex items-center gap-1">
+                                {slot.recurrence && slot.recurrence !== 'all' && (
+                                  <span className="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300">
+                                    {slot.recurrence === 'odd_weeks' ? 'Odd' : 'Even'}
+                                  </span>
+                                )}
+                                {slot.isOneOff && (
+                                  <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300">
+                                    ⚡
+                                  </span>
+                                )}
+                                <span className="font-medium text-slate-300">{slot.type}</span>
+                              </div>
                             </div>
 
                             {/* Hover Edit/Delete shortcut */}

@@ -13,13 +13,16 @@ import {
   Filter, 
   Clock, 
   Check, 
-  Info 
+  Info,
+  Download,
+  Printer,
+  FileText
 } from 'lucide-react';
 
 interface AttendanceHistoryModalProps {
   state: StudentData;
   onClose: () => void;
-  onLogAttendance: (courseId: string, status: AttendanceStatus, date?: string, note?: string) => void;
+  onLogAttendance: (courseId: string, status: AttendanceStatus, date?: string, note?: string, documentRef?: string) => void;
   onDeleteRecord: (recordId: string) => void;
 }
 
@@ -41,6 +44,7 @@ export function AttendanceHistoryModal({
   const [backfillDate, setBackfillDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [backfillStatus, setBackfillStatus] = useState<AttendanceStatus>('present');
   const [backfillNote, setBackfillNote] = useState('');
+  const [backfillDocRef, setBackfillDocRef] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
 
   const filteredRecords = state.attendanceRecords.filter((rec) => {
@@ -53,19 +57,56 @@ export function AttendanceHistoryModal({
   const presentCount = state.attendanceRecords.filter((r) => r.status === 'present').length;
   const absentCount = state.attendanceRecords.filter((r) => r.status === 'absent').length;
   const excusedCount = state.attendanceRecords.filter((r) => r.status === 'excused').length;
+  const cancelledCount = state.attendanceRecords.filter((r) => r.status === 'cancelled').length;
   const countedClasses = presentCount + absentCount;
   const overallPct = countedClasses > 0 ? Math.round((presentCount / countedClasses) * 100) : 100;
 
   const handleBackfillSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!backfillCourseId) return;
-    onLogAttendance(backfillCourseId, backfillStatus, backfillDate, backfillNote.trim() || undefined);
+    onLogAttendance(
+      backfillCourseId, 
+      backfillStatus, 
+      backfillDate, 
+      backfillNote.trim() || undefined,
+      backfillDocRef.trim() || undefined
+    );
     setSavedNotice(true);
     setBackfillNote('');
+    setBackfillDocRef('');
     setTimeout(() => {
       setSavedNotice(false);
       setIsBackfilling(false);
     }, 800);
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Course Code', 'Course Name', 'Status', 'Note', 'Document / Proof Reference'];
+    const rows = state.attendanceRecords.map((r) => {
+      const c = courseMap.get(r.courseId);
+      return [
+        `"${r.date}"`,
+        `"${c ? c.code : ''}"`,
+        `"${c ? c.name.replace(/"/g, '""') : ''}"`,
+        `"${r.status}"`,
+        `"${(r.note || '').replace(/"/g, '""')}"`,
+        `"${(r.documentRef || '').replace(/"/g, '""')}"`,
+      ].join(',');
+    });
+    const csvContent = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `attendance_log_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintStatement = () => {
+    window.print();
   };
 
   const getStatusBadge = (status: AttendanceStatus) => {
@@ -139,22 +180,26 @@ export function AttendanceHistoryModal({
         </div>
 
         {/* Top Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="p-3.5 rounded-2xl bg-white/5 border border-white/5 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Logged</p>
-            <p className="text-xl font-extrabold text-white mt-0.5">{totalLogged}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mb-6">
+          <div className="p-3 rounded-2xl bg-white/5 border border-white/5 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Logged</p>
+            <p className="text-lg font-extrabold text-white mt-0.5">{totalLogged}</p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400">Attended</p>
-            <p className="text-xl font-extrabold text-emerald-300 mt-0.5">{presentCount}</p>
+          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Attended</p>
+            <p className="text-lg font-extrabold text-emerald-300 mt-0.5">{presentCount}</p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-400">Absences</p>
-            <p className="text-xl font-extrabold text-rose-300 mt-0.5">{absentCount}</p>
+          <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-400">Absences</p>
+            <p className="text-lg font-extrabold text-rose-300 mt-0.5">{absentCount}</p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">Excused / OD</p>
-            <p className="text-xl font-extrabold text-amber-300 mt-0.5">{excusedCount}</p>
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Excused / OD</p>
+            <p className="text-lg font-extrabold text-amber-300 mt-0.5">{excusedCount}</p>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-500/10 border border-slate-500/20 text-center col-span-2 sm:col-span-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Not Conducted</p>
+            <p className="text-lg font-extrabold text-slate-300 mt-0.5">{cancelledCount}</p>
           </div>
         </div>
 
@@ -191,14 +236,36 @@ export function AttendanceHistoryModal({
             </select>
           </div>
 
-          <button
-            onClick={() => setIsBackfilling(!isBackfilling)}
-            className="text-xs font-bold px-3.5 py-1.5 rounded-xl text-white shadow-md flex items-center gap-1.5 self-start sm:self-auto transition-transform active:scale-95"
-            style={{ backgroundColor: isBackfilling ? '#475569' : theme.accent }}
-          >
-            {isBackfilling ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-            {isBackfilling ? 'Cancel' : 'Log Past Date'}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 flex items-center gap-1.5 transition-colors"
+              title="Download official CSV attendance log for disputes or dean approval"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-400" />
+              <span>CSV Log</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintStatement}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 flex items-center gap-1.5 transition-colors"
+              title="Print formal attendance statement"
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-300" />
+              <span>Print</span>
+            </button>
+
+            <button
+              onClick={() => setIsBackfilling(!isBackfilling)}
+              className="text-xs font-bold px-3.5 py-1.5 rounded-xl text-white shadow-md flex items-center gap-1.5 transition-transform active:scale-95"
+              style={{ backgroundColor: isBackfilling ? '#475569' : theme.accent }}
+            >
+              {isBackfilling ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {isBackfilling ? 'Cancel' : 'Log Past Date'}
+            </button>
+          </div>
         </div>
 
         {/* Backfill Past Date Form (Collapsible) */}
@@ -258,15 +325,28 @@ export function AttendanceHistoryModal({
               </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Note (Optional)</label>
-              <input
-                type="text"
-                placeholder="e.g. Hackathon Duty Leave, Fever, Professor substitute"
-                value={backfillNote}
-                onChange={(e) => setBackfillNote(e.target.value)}
-                className="w-full text-xs px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">Note (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Hackathon Duty Leave, Fever, Professor substitute"
+                  value={backfillNote}
+                  onChange={(e) => setBackfillNote(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">Proof / Document Reference (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. OD Slip #401, Medical Certificate link"
+                  value={backfillDocRef}
+                  onChange={(e) => setBackfillDocRef(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none"
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
@@ -317,6 +397,11 @@ export function AttendanceHistoryModal({
                       <p className="text-xs text-slate-400 truncate mt-0.5">
                         {course?.name || 'Class Session'}
                         {rec.note && <span className="text-slate-300 italic ml-2">• "{rec.note}"</span>}
+                        {rec.documentRef && (
+                          <span className="text-indigo-300 ml-2 font-mono text-[10px] bg-indigo-500/15 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                            📎 {rec.documentRef}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>

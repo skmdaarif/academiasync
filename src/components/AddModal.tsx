@@ -7,7 +7,8 @@ import {
   DayOfWeek, 
   SlotType, 
   TaskPriority, 
-  TaskCategory 
+  TaskCategory,
+  SlotRecurrence 
 } from '../types';
 import { THEMES } from '../styles/themes';
 import { DAYS_ORDER, checkSlotOverlap, parseTimeToMinutes } from '../utils/timeUtils';
@@ -57,6 +58,10 @@ export function AddModal({
   const [slotEndTime, setSlotEndTime] = useState(initialSlot?.endTime || '10:00');
   const [slotRoom, setSlotRoom] = useState(initialSlot?.room || '');
   const [slotType, setSlotType] = useState<SlotType>(initialSlot?.type || 'Lecture');
+  const [slotRecurrence, setSlotRecurrence] = useState<SlotRecurrence>(initialSlot?.recurrence || 'all');
+  const [slotIsOneOff, setSlotIsOneOff] = useState<boolean>(initialSlot?.isOneOff || false);
+  const [slotSpecificDate, setSlotSpecificDate] = useState<string>(initialSlot?.specificDate || new Date().toISOString().split('T')[0]);
+  const [slotBatch, setSlotBatch] = useState<string>(initialSlot?.batch || '');
   const [slotNotes, setSlotNotes] = useState(initialSlot?.notes || '');
   const [slotError, setSlotError] = useState<string>('');
 
@@ -128,6 +133,10 @@ export function AddModal({
         endTime: slotEndTime,
         room: slotRoom.trim() || undefined,
         type: slotType,
+        recurrence: slotRecurrence,
+        isOneOff: slotIsOneOff,
+        specificDate: slotIsOneOff ? slotSpecificDate : undefined,
+        batch: slotBatch.trim() || undefined,
         notes: slotNotes.trim() || undefined,
       });
     } else {
@@ -138,6 +147,10 @@ export function AddModal({
         endTime: slotEndTime,
         room: slotRoom.trim() || undefined,
         type: slotType,
+        recurrence: slotRecurrence,
+        isOneOff: slotIsOneOff,
+        specificDate: slotIsOneOff ? slotSpecificDate : undefined,
+        batch: slotBatch.trim() || undefined,
         notes: slotNotes.trim() || undefined,
       });
     }
@@ -340,6 +353,67 @@ export function AddModal({
                 </span>
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Recurrence Cycle
+                </label>
+                <select
+                  value={slotRecurrence}
+                  onChange={(e) => setSlotRecurrence(e.target.value as SlotRecurrence)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                >
+                  <option value="all" className="bg-slate-900">Every Week (Standard)</option>
+                  <option value="odd_weeks" className="bg-slate-900">Odd Weeks Only (1, 3, 5...)</option>
+                  <option value="even_weeks" className="bg-slate-900">Even Weeks Only (2, 4, 6...)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Lab Batch / Group (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Batch 1, Group B"
+                  value={slotBatch}
+                  onChange={(e) => setSlotBatch(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs placeholder:text-slate-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* One-off makeup session checkbox */}
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={slotIsOneOff}
+                  onChange={(e) => setSlotIsOneOff(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-500 focus:ring-0 cursor-pointer"
+                />
+                <span>One-off makeup / extra session (Does not repeat weekly)</span>
+              </label>
+
+              {slotIsOneOff && (
+                <div className="pt-2">
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                    Specific Session Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={slotSpecificDate}
+                    onChange={(e) => setSlotSpecificDate(e.target.value)}
+                    required={slotIsOneOff}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                  <p className="text-[10px] text-amber-400 mt-1">
+                    This class will only appear on this specific date and will not clutter other weeks.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">

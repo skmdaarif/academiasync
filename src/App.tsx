@@ -86,9 +86,9 @@ export function App() {
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showVaultModal, setShowVaultModal] = useState(false);
   const [selectedSemesterNumber, setSelectedSemesterNumber] = useState<number | null>(null);
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
-  const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showToast = (text: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     setToastMessage({ text, type });
     setTimeout(() => {
       setToastMessage(null);
@@ -223,11 +223,12 @@ export function App() {
     courseId: string, 
     status: AttendanceStatus, 
     date?: string, 
-    note?: string
+    note?: string,
+    documentRef?: string
   ) => {
     try {
       const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
-      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note, activeSem);
+      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note, activeSem, documentRef);
       setState((prev) => ({
         ...prev,
         courses: prev.courses.map((c) => (c.id === courseId ? { ...c, totalClasses: res.updatedCourse.totalClasses, attendedClasses: res.updatedCourse.attendedClasses } : c)),
@@ -668,7 +669,13 @@ export function App() {
         onOpenPromoteModal={() => setShowPromoteModal(true)}
         onViewChange={handleViewChange}
         onThemeChange={handleThemeChange}
-        onOpenAddModal={(type) => setAddModalType(type)}
+        onOpenAddModal={(type) => {
+          if (isViewingHistorical) {
+            showToast(`Viewing historical archive (Semester ${currentViewSemesterNumber}). Switch to active semester in header to add entries.`, 'warning');
+            return;
+          }
+          setAddModalType(type);
+        }}
         onOpenExport={() => setShowExportModal(true)}
         onOpenSettings={() => setShowSettingsModal(true)}
         onLogout={handleLogout}
@@ -761,7 +768,13 @@ export function App() {
               state={viewState}
               onMarkAttendance={handleMarkAttendance}
               onViewChange={handleViewChange}
-              onOpenAddModal={(type) => setAddModalType(type)}
+              onOpenAddModal={(type) => {
+          if (isViewingHistorical) {
+            showToast(`Viewing historical archive (Semester ${currentViewSemesterNumber}). Switch to active semester in header to add entries.`, 'warning');
+            return;
+          }
+          setAddModalType(type);
+        }}
             />
 
             {/* If zero courses, show empty setup state */}
@@ -852,11 +865,41 @@ export function App() {
             </div>
             <TimetableGrid
               state={viewState}
-              onOpenAddSlot={() => setAddModalType('slot')}
-              onOpenAddCourse={() => setAddModalType('course')}
-              onOpenPdfImport={() => setShowPdfImportModal(true)}
-              onEditSlot={(slot) => setEditingSlot(slot)}
-              onDeleteSlot={handleDeleteSlot}
+              onOpenAddSlot={() => {
+                if (isViewingHistorical) {
+                  showToast(`Semester ${currentViewSemesterNumber} is archived (Read-Only). Switch to active semester to add slots.`, 'warning');
+                  return;
+                }
+                setAddModalType('slot');
+              }}
+              onOpenAddCourse={() => {
+                if (isViewingHistorical) {
+                  showToast(`Semester ${currentViewSemesterNumber} is archived (Read-Only). Switch to active semester to add courses.`, 'warning');
+                  return;
+                }
+                setAddModalType('course');
+              }}
+              onOpenPdfImport={() => {
+                if (isViewingHistorical) {
+                  showToast(`Cannot import timetable into archived Semester ${currentViewSemesterNumber}.`, 'warning');
+                  return;
+                }
+                setShowPdfImportModal(true);
+              }}
+              onEditSlot={(slot) => {
+                if (isViewingHistorical) {
+                  showToast(`Semester ${currentViewSemesterNumber} records are preserved (Read-Only).`, 'info');
+                  return;
+                }
+                setEditingSlot(slot);
+              }}
+              onDeleteSlot={(id) => {
+                if (isViewingHistorical) {
+                  showToast(`Cannot delete archived classes from Semester ${currentViewSemesterNumber}.`, 'warning');
+                  return;
+                }
+                handleDeleteSlot(id);
+              }}
               onUpdateCourse={handleUpdateCourse}
               onDeleteCourse={handleDeleteCourse}
               onMarkAttendance={handleMarkAttendance}
@@ -1023,6 +1066,8 @@ export function App() {
             ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-900/30'
             : toastMessage.type === 'error'
             ? 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-900/30'
+            : toastMessage.type === 'warning'
+            ? 'bg-amber-950/90 text-amber-300 border-amber-500/40 shadow-amber-900/30'
             : 'bg-slate-900/90 text-white border-white/20'
         }`}>
           <span>{toastMessage.text}</span>

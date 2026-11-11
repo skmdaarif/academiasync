@@ -43,7 +43,7 @@ export function LiveHero({
   }, []);
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
-  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime);
+  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate);
 
   // Background reminder notifications for upcoming lectures (<= 10 mins before class)
   useEffect(() => {
