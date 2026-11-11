@@ -59,6 +59,10 @@ export interface Course {
   attendedClasses: number;
   baselineClassesHeld?: number; // Portal baseline prior to joining
   baselineAttendedClasses?: number; // Portal baseline attended
+  syllabusUrl?: string; // Link to syllabus PDF or web document
+  driveFolderLink?: string; // Google Drive / LMS folder link
+  professorEmail?: string; // Faculty email for direct contact
+  cabinRoom?: string; // Faculty office or cabin location
   semesterNumber?: number;
 }
 
@@ -77,6 +81,7 @@ export interface TimeSlot {
   isOneOff?: boolean;
   specificDate?: string; // YYYY-MM-DD
   batch?: string; // e.g. "B1", "B2"
+  durationMultiplier?: number; // e.g. 2 for 2-hour lab, 3 for 3-hour lab
   notes?: string;
   meetingLink?: string;
   semesterNumber?: number;
@@ -117,6 +122,7 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
   slotId?: string;
+  periodsCount?: number; // Count of periods credited/debited (e.g. 2 or 3 for multi-hour labs)
   note?: string;
   documentRef?: string; // Certificate / Proof Link / OD Token
   semesterNumber?: number;
@@ -142,11 +148,25 @@ export interface Exam {
   startTime?: string; // "09:00"
   endTime?: string;   // "12:00"
   roomOrLab?: string;
+  seatNumber?: string; // Desk / Seat / Row Number
+  session?: 'morning' | 'afternoon';
   maxMarks?: number;
   marksObtained?: number;
   syllabusUnits?: SyllabusUnit[];
   semesterNumber?: number;
   notes?: string;
+  createdAt?: string;
+}
+
+export interface AcademicHoliday {
+  id: string;
+  userId?: string;
+  title: string; // e.g. "Diwali Vacation", "Mid-Term Recess", "Sports Fest"
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  isOffDay?: boolean;
+  notes?: string;
+  semesterNumber?: number;
   createdAt?: string;
 }
 
@@ -165,6 +185,7 @@ export interface StudentData {
   attendanceRecords: AttendanceRecord[];
   semesters?: AcademicSemester[];
   exams?: Exam[];
+  holidays?: AcademicHoliday[];
   activeSemesterNumber?: number;
   theme: ThemeKey;
   activeView: 'dashboard' | 'timetable' | 'tasks' | 'attendance' | 'exams';

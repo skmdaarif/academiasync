@@ -7,7 +7,7 @@ import {
   Course
 } from '../types';
 import { THEMES } from '../styles/themes';
-import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes } from '../utils/timeUtils';
+import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes, getSlotDurationMultiplier, isHolidayDate } from '../utils/timeUtils';
 import { getStoredPreference, setStoredPreference } from '../services/platform';
 import { 
   Clock, 
@@ -26,7 +26,8 @@ import {
   X,
   Printer,
   CalendarDays,
-  FileText
+  FileText,
+  Palmtree
 } from 'lucide-react';
 
 interface TimetableGridProps {
@@ -34,11 +35,12 @@ interface TimetableGridProps {
   onOpenAddSlot: () => void;
   onOpenAddCourse: () => void;
   onOpenPdfImport?: () => void;
+  onOpenHolidays?: () => void;
   onEditSlot: (slot: TimeSlot) => void;
   onDeleteSlot: (slotId: string) => void;
   onUpdateCourse?: (course: Course) => void;
   onDeleteCourse?: (courseId: string) => void;
-  onMarkAttendance: (courseId: string, status: AttendanceStatus) => void;
+  onMarkAttendance: (courseId: string, status: AttendanceStatus, date?: string, note?: string, documentRef?: string, durationMultiplier?: number) => void;
 }
 
 const PRESET_COLORS = [
@@ -58,6 +60,7 @@ export function TimetableGrid({
   onOpenAddSlot,
   onOpenAddCourse,
   onOpenPdfImport,
+  onOpenHolidays,
   onEditSlot,
   onDeleteSlot,
   onUpdateCourse,
@@ -294,6 +297,18 @@ export function TimetableGrid({
             </button>
           )}
 
+          {onOpenHolidays && (
+            <button
+              type="button"
+              onClick={onOpenHolidays}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 hover:text-white transition-colors"
+              title="Manage Institutional Holidays & Semester Recess"
+            >
+              <Palmtree className="w-3.5 h-3.5" />
+              Breaks
+            </button>
+          )}
+
           <button
             onClick={onOpenAddCourse}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 hover:text-white hover:bg-white/10 transition-colors"
@@ -468,6 +483,11 @@ export function TimetableGrid({
                           {slot.batch}
                         </span>
                       )}
+                      {getSlotDurationMultiplier(slot) > 1 && (
+                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          ⚡ {getSlotDurationMultiplier(slot)} Periods Block
+                        </span>
+                      )}
                       {slot.notes && (
                         <span className="text-[11px] text-amber-300 bg-amber-950/30 px-2 py-0.5 rounded border border-amber-500/20">
                           📌 {slot.notes}
@@ -507,7 +527,10 @@ export function TimetableGrid({
                         return (
                           <>
                             <button
-                              onClick={() => onMarkAttendance(course.id, 'present')}
+                              onClick={() => {
+                                const mult = getSlotDurationMultiplier(slot);
+                                onMarkAttendance(course.id, 'present', undefined, undefined, undefined, mult);
+                              }}
                               className="p-2 rounded-xl text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/60 transition-all flex items-center gap-1"
                               title="Log Present"
                             >
@@ -516,7 +539,10 @@ export function TimetableGrid({
                             </button>
 
                             <button
-                              onClick={() => onMarkAttendance(course.id, 'absent')}
+                              onClick={() => {
+                                const mult = getSlotDurationMultiplier(slot);
+                                onMarkAttendance(course.id, 'absent', undefined, undefined, undefined, mult);
+                              }}
                               className="p-2 rounded-xl text-xs font-semibold text-rose-400 bg-rose-950/40 border border-rose-500/30 hover:bg-rose-900/60 transition-all flex items-center gap-1"
                               title="Log Absent / Bunk"
                             >
@@ -525,7 +551,10 @@ export function TimetableGrid({
                             </button>
 
                             <button
-                              onClick={() => onMarkAttendance(course.id, 'cancelled')}
+                              onClick={() => {
+                                const mult = getSlotDurationMultiplier(slot);
+                                onMarkAttendance(course.id, 'cancelled', undefined, undefined, undefined, mult);
+                              }}
                               className="p-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800/80 border border-slate-600/40 hover:bg-slate-700/80 transition-all flex items-center gap-1"
                               title="Class Not Conducted / Holiday / Half-Day (0 safe bunk penalty)"
                             >

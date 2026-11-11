@@ -1,4 +1,4 @@
-import { DayOfWeek, TimeSlot, Course } from '../types';
+import { DayOfWeek, TimeSlot, Course, AcademicHoliday } from '../types';
 
 export const DAYS_ORDER: DayOfWeek[] = [
   'Monday',
@@ -41,6 +41,64 @@ export function formatTime12h(timeStr: string): string {
   return `${h}:${m} ${ampm}`;
 }
 
+export function getSlotDurationMultiplier(slot: Partial<TimeSlot>): number {
+  if (slot.durationMultiplier && slot.durationMultiplier > 0) {
+    return slot.durationMultiplier;
+  }
+  if (!slot.startTime || !slot.endTime) return 1;
+  const startM = parseTimeToMinutes(slot.startTime);
+  const endM = parseTimeToMinutes(slot.endTime);
+  const duration = endM - startM;
+  if (duration >= 140) return 3; // ~3 hours (e.g. 150-180 min lab)
+  if (duration >= 80) return 2;  // ~2 hours (e.g. 90-120 min lab)
+  return 1;
+}
+
+export function isHolidayDate(targetDate: Date, holidays?: AcademicHoliday[]): AcademicHoliday | null {
+  if (!holidays || holidays.length === 0) return null;
+  const dateStr = targetDate.toISOString().split('T')[0];
+  return holidays.find((h) => {
+    const s = h.startDate.split('T')[0];
+    const e = h.endDate.split('T')[0];
+    return dateStr >= s && dateStr <= e;
+  }) || null;
+}
+
+export function playCampusBellChime(): void {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    // First tone (E5 ~ 659.25Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(659.25, now);
+    gain1.gain.setValueAtTime(0.2, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.8);
+
+    // Second harmonic tone (A5 ~ 880Hz)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, now + 0.25);
+    gain2.gain.setValueAtTime(0.25, now + 0.25);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.25);
+    osc2.stop(now + 1.2);
+  } catch (err) {
+    console.warn('Campus bell chime audio unavailable:', err);
+  }
+}
+
 export interface CurrentClassStatus {
   currentSlot: TimeSlot | null;
   currentCourse: Course | null;
@@ -49,6 +107,8 @@ export interface CurrentClassStatus {
   minutesRemaining: number;
   progressPercent: number;
   timeUntilNext: number; // Minutes until next class starts
+  isHoliday?: boolean;
+  holidayTitle?: string;
 }
 
 /**
@@ -104,8 +164,24 @@ export function getCurrentAndNextClass(
   slots: TimeSlot[],
   courses: Course[],
   currentTime: Date = new Date(),
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  holidays?: AcademicHoliday[]
 ): CurrentClassStatus {
+  const activeHoliday = isHolidayDate(currentTime, holidays);
+  if (activeHoliday) {
+    return {
+      currentSlot: null,
+      currentCourse: null,
+      nextSlot: null,
+      nextCourse: null,
+      minutesRemaining: 0,
+      progressPercent: 0,
+      timeUntilNext: 0,
+      isHoliday: true,
+      holidayTitle: activeHoliday.title,
+    };
+  }
+
   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
   // Filter slots for today respecting one-offs and odd/even week recurrence

@@ -11,20 +11,24 @@ import {
   CalendarCheck,
   Plus,
   BookOpen,
-  Bell
+  Bell,
+  Volume2,
+  VolumeX,
+  Palmtree
 } from 'lucide-react';
 import { StudentData, AttendanceStatus, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
-import { getCurrentAndNextClass, formatTime12h, calculateAttendance } from '../utils/timeUtils';
+import { getCurrentAndNextClass, formatTime12h, calculateAttendance, playCampusBellChime, getSlotDurationMultiplier } from '../utils/timeUtils';
 import { sendAppNotification, requestNotificationPermission } from '../services/platform';
 import confetti from 'canvas-confetti';
 
 interface LiveHeroProps {
   user: UserAccount;
   state: StudentData;
-  onMarkAttendance: (courseId: string, status: AttendanceStatus) => void;
+  onMarkAttendance: (courseId: string, status: AttendanceStatus, date?: string, note?: string, documentRef?: string, durationMultiplier?: number) => void;
   onViewChange: (view: StudentData['activeView']) => void;
   onOpenAddModal: (type: 'slot' | 'task' | 'course') => void;
+  onOpenHolidays?: () => void;
 }
 
 export function LiveHero({
@@ -33,9 +37,29 @@ export function LiveHero({
   onMarkAttendance,
   onViewChange,
   onOpenAddModal,
+  onOpenHolidays,
 }: LiveHeroProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [notifiedSlots, setNotifiedSlots] = useState<Set<string>>(new Set());
+  const [chimedSlots, setChimedSlots] = useState<Set<string>>(new Set());
+  const [chimeEnabled, setChimeEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('academiasync_chime_enabled') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleChime = () => {
+    const nextVal = !chimeEnabled;
+    setChimeEnabled(nextVal);
+    try {
+      localStorage.setItem('academiasync_chime_enabled', String(nextVal));
+    } catch {}
+    if (nextVal) {
+      playCampusBellChime();
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -43,7 +67,7 @@ export function LiveHero({
   }, []);
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
-  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate);
+  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate, state.holidays);
 
   // Background reminder notifications for upcoming lectures (<= 10 mins before class)
   useEffect(() => {
@@ -59,6 +83,18 @@ export function LiveHero({
       }
     }
   }, [status.nextSlot, status.nextCourse, status.timeUntilNext, notifiedSlots]);
+
+  // Audio Campus Bell Chime (<= 5 mins before class)
+  useEffect(() => {
+    if (chimeEnabled && status.nextSlot && status.timeUntilNext > 0 && status.timeUntilNext <= 5) {
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const chimeKey = `${status.nextSlot.id}_${todayDateStr}`;
+      if (!chimedSlots.has(chimeKey)) {
+        setChimedSlots((prev) => new Set(prev).add(chimeKey));
+        playCampusBellChime();
+      }
+    }
+  }, [chimeEnabled, status.nextSlot, status.timeUntilNext, chimedSlots]);
 
   // Quick stats
   const pendingTasks = state.tasks.filter((t) => t.status !== 'completed');
@@ -78,7 +114,8 @@ export function LiveHero({
       spread: 60,
       origin: { y: 0.7 },
     });
-    onMarkAttendance(courseId, 'present');
+    const multiplier = status.currentSlot ? getSlotDurationMultiplier(status.currentSlot) : 1;
+    onMarkAttendance(courseId, 'present', undefined, undefined, undefined, multiplier);
   };
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -107,30 +144,83 @@ export function LiveHero({
           </p>
         </div>
 
-        {/* Quick overall attendance chip */}
-        <div 
-          className="inline-flex items-center gap-3 px-4 py-2 rounded-2xl border cursor-pointer transition-transform hover:scale-[1.02]"
-          style={{
-            backgroundColor: theme.cardBg,
-            borderColor: theme.cardBorder,
-          }}
-          onClick={() => onViewChange('attendance')}
-        >
-          <div className="relative flex items-center justify-center">
-            <span className={`text-base font-extrabold ${state.courses.length === 0 ? 'text-slate-400' : isOverallSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {state.courses.length === 0 ? '--' : `${overallPercentage}%`}
-            </span>
-          </div>
-          <div className="text-left">
-            <p className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: theme.textSecondary }}>
-              Overall Attendance
-            </p>
-            <p className={`text-xs font-bold ${state.courses.length === 0 ? 'text-slate-400' : isOverallSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {state.courses.length === 0 ? 'No courses added' : isOverallSafe ? '✓ Above Safe Goal' : '⚠ Below Target Goal'}
-            </p>
+        {/* Quick controls & overall attendance chip */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={toggleChime}
+            className={`p-2.5 rounded-2xl border transition-all flex items-center gap-1.5 text-xs font-bold ${
+              chimeEnabled
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                : 'bg-white/5 border-white/10 text-slate-400'
+            }`}
+            title={chimeEnabled ? 'Campus chime active (5m before class). Click to mute.' : 'Campus chime muted. Click to enable audio chime.'}
+          >
+            {chimeEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4" />}
+            <span className="hidden sm:inline">{chimeEnabled ? 'Chime On' : 'Chime Off'}</span>
+          </button>
+
+          {onOpenHolidays && (
+            <button
+              onClick={onOpenHolidays}
+              className="p-2.5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold transition-all flex items-center gap-1.5"
+              title="Manage Institutional Holidays & Recess"
+            >
+              <Palmtree className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">Breaks</span>
+            </button>
+          )}
+
+          <div 
+            className="inline-flex items-center gap-3 px-4 py-2 rounded-2xl border cursor-pointer transition-transform hover:scale-[1.02]"
+            style={{
+              backgroundColor: theme.cardBg,
+              borderColor: theme.cardBorder,
+            }}
+            onClick={() => onViewChange('attendance')}
+          >
+            <div className="relative flex items-center justify-center">
+              <span className={`text-base font-extrabold ${state.courses.length === 0 ? 'text-slate-400' : isOverallSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {state.courses.length === 0 ? '--' : `${overallPercentage}%`}
+              </span>
+            </div>
+            <div className="text-left">
+              <p className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: theme.textSecondary }}>
+                Overall Attendance
+              </p>
+              <p className={`text-xs font-bold ${state.courses.length === 0 ? 'text-slate-400' : isOverallSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {state.courses.length === 0 ? 'No courses added' : isOverallSafe ? '✓ Above Safe Goal' : '⚠ Below Target Goal'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Campus Holiday / Academic Recess Banner */}
+      {status.isHoliday && (
+        <div className="mb-5 p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-3 shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+              <Palmtree className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>🌴 Campus Holiday / Recess: {status.holidayTitle}</span>
+              </h4>
+              <p className="text-xs text-amber-300/80 mt-0.5">
+                Class lectures, tracking alarms, and bunk counters are paused for today. Enjoy your break!
+              </p>
+            </div>
+          </div>
+          {onOpenHolidays && (
+            <button
+              onClick={onOpenHolidays}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-colors shrink-0"
+            >
+              View Calendar
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Classes Commencement Countdown Banner (If term hasn't started yet) */}
       {isBeforeTermStart && (
@@ -360,14 +450,20 @@ export function LiveHero({
                       Mark Present
                     </button>
                     <button
-                      onClick={() => onMarkAttendance(status.currentCourse!.id, 'absent')}
+                      onClick={() => {
+                        const multiplier = status.currentSlot ? getSlotDurationMultiplier(status.currentSlot) : 1;
+                        onMarkAttendance(status.currentCourse!.id, 'absent', undefined, undefined, undefined, multiplier);
+                      }}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/10 hover:bg-rose-600/30 hover:text-rose-300 transition-all"
                     >
                       <XCircle className="w-4 h-4" />
                       Missed / Bunk
                     </button>
                     <button
-                      onClick={() => onMarkAttendance(status.currentCourse!.id, 'cancelled')}
+                      onClick={() => {
+                        const multiplier = status.currentSlot ? getSlotDurationMultiplier(status.currentSlot) : 1;
+                        onMarkAttendance(status.currentCourse!.id, 'cancelled', undefined, undefined, undefined, multiplier);
+                      }}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/10 hover:bg-slate-700/60 hover:text-white transition-all"
                       title="Class not conducted due to half day, holiday, or faculty leave (0 safe bunk penalty)"
                     >

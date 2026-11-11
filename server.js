@@ -169,6 +169,19 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_exams_user ON exams(user_id);
+
+  CREATE TABLE IF NOT EXISTS academic_holidays (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    is_off_day INTEGER DEFAULT 1,
+    notes TEXT,
+    semester_number INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_holidays_user ON academic_holidays(user_id);
 `);
 
 // Safe Schema Column Migrations
@@ -191,16 +204,24 @@ ensureColumn('users', 'student_batch', 'TEXT');
 ensureColumn('courses', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('courses', 'baseline_classes_held', 'INTEGER DEFAULT 0');
 ensureColumn('courses', 'baseline_attended_classes', 'INTEGER DEFAULT 0');
+ensureColumn('courses', 'syllabus_url', 'TEXT');
+ensureColumn('courses', 'drive_folder_link', 'TEXT');
+ensureColumn('courses', 'professor_email', 'TEXT');
+ensureColumn('courses', 'cabin_room', 'TEXT');
 ensureColumn('time_slots', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('time_slots', 'recurrence', "TEXT DEFAULT 'all'");
 ensureColumn('time_slots', 'is_one_off', 'INTEGER DEFAULT 0');
 ensureColumn('time_slots', 'specific_date', 'TEXT');
 ensureColumn('time_slots', 'batch', 'TEXT');
+ensureColumn('time_slots', 'duration_multiplier', 'INTEGER DEFAULT 1');
 ensureColumn('tasks', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('attendance_records', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('attendance_records', 'document_ref', 'TEXT');
+ensureColumn('attendance_records', 'periods_count', 'INTEGER DEFAULT 1');
+ensureColumn('exams', 'seat_number', 'TEXT');
+ensureColumn('exams', 'session', "TEXT DEFAULT 'morning'");
 
-console.log('✅ SQLite relational schema, multi-semester tables, exams & migrations verified.');
+console.log('✅ SQLite relational schema, multi-semester tables, exams, holidays & migrations verified.');
 
 // ----------------------------------------------------------------------------
 // MIDDLEWARES & AUTHENTICATION
@@ -265,6 +286,10 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
            attended_classes as attendedClasses,
            COALESCE(baseline_classes_held, 0) as baselineClassesHeld,
            COALESCE(baseline_attended_classes, 0) as baselineAttendedClasses,
+           syllabus_url as syllabusUrl,
+           drive_folder_link as driveFolderLink,
+           professor_email as professorEmail,
+           cabin_room as cabinRoom,
            COALESCE(semester_number, 1) as semesterNumber
     FROM courses
     WHERE user_id = ?
@@ -279,6 +304,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
            (is_one_off = 1) as isOneOff,
            specific_date as specificDate,
            batch,
+           COALESCE(duration_multiplier, 1) as durationMultiplier,
            COALESCE(semester_number, 1) as semesterNumber
     FROM time_slots
     WHERE user_id = ?
@@ -324,6 +350,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   const attendanceRecords = db.prepare(`
     SELECT id, course_id as courseId, log_date as date, status, note, document_ref as documentRef,
            time_slot_id as slotId,
+           COALESCE(periods_count, 1) as periodsCount,
            COALESCE(semester_number, 1) as semesterNumber
     FROM attendance_records
     WHERE user_id = ?
@@ -365,7 +392,9 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     SELECT id, user_id as userId, course_id as courseId, title,
            exam_category as examCategory, exam_type as examType,
            exam_date as examDate, start_time as startTime, end_time as endTime,
-           room_or_lab as roomOrLab, max_marks as maxMarks,
+           room_or_lab as roomOrLab, seat_number as seatNumber,
+           COALESCE(session, 'morning') as session,
+           max_marks as maxMarks,
            marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
            COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
     FROM exams
@@ -386,6 +415,15 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     return { ...rest, syllabusUnits };
   });
 
+  const holidays = db.prepare(`
+    SELECT id, user_id as userId, title, start_date as startDate, end_date as endDate,
+           (is_off_day = 1) as isOffDay, notes,
+           COALESCE(semester_number, 1) as semesterNumber, created_at as createdAt
+    FROM academic_holidays
+    WHERE user_id = ?
+    ORDER BY start_date ASC
+  `).all(userId).map(h => ({ ...h, isOffDay: Boolean(h.isOffDay) }));
+
   return {
     courses,
     timeSlots,
@@ -393,6 +431,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     attendanceRecords,
     semesters,
     exams,
+    holidays,
     activeSemesterNumber,
     theme: defaultTheme,
     activeView: 'dashboard',
@@ -870,6 +909,10 @@ app.post('/api/courses', requireAuth, (req, res) => {
       attendedClasses,
       baselineClassesHeld,
       baselineAttendedClasses,
+      syllabusUrl,
+      driveFolderLink,
+      professorEmail,
+      cabinRoom,
       semesterNumber,
     } = req.body;
 
@@ -887,8 +930,10 @@ app.post('/api/courses', requireAuth, (req, res) => {
       INSERT INTO courses (
         id, user_id, code, name, professor, default_room, color_hex,
         credits, attendance_goal, total_classes_held, attended_classes,
-        baseline_classes_held, baseline_attended_classes, semester_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        baseline_classes_held, baseline_attended_classes,
+        syllabus_url, drive_folder_link, professor_email, cabin_room,
+        semester_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       courseId,
       effectiveUserId,
@@ -903,6 +948,10 @@ app.post('/api/courses', requireAuth, (req, res) => {
       attended,
       baseHeld,
       baseAttended,
+      syllabusUrl || null,
+      driveFolderLink || null,
+      professorEmail || null,
+      cabinRoom || null,
       semNumber
     );
 
@@ -912,6 +961,10 @@ app.post('/api/courses', requireAuth, (req, res) => {
              attended_classes as attendedClasses,
              COALESCE(baseline_classes_held, 0) as baselineClassesHeld,
              COALESCE(baseline_attended_classes, 0) as baselineAttendedClasses,
+             syllabus_url as syllabusUrl,
+             drive_folder_link as driveFolderLink,
+             professor_email as professorEmail,
+             cabin_room as cabinRoom,
              COALESCE(semester_number, 1) as semesterNumber
       FROM courses WHERE id = ?
     `).get(courseId);
@@ -938,6 +991,10 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
       attendedClasses,
       baselineClassesHeld,
       baselineAttendedClasses,
+      syllabusUrl,
+      driveFolderLink,
+      professorEmail,
+      cabinRoom,
     } = req.body;
 
     const existing = db.prepare('SELECT * FROM courses WHERE id = ? AND user_id = ?').get(id, req.user.id);
@@ -957,7 +1014,11 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
           total_classes_held = COALESCE(?, total_classes_held),
           attended_classes = COALESCE(?, attended_classes),
           baseline_classes_held = COALESCE(?, baseline_classes_held),
-          baseline_attended_classes = COALESCE(?, baseline_attended_classes)
+          baseline_attended_classes = COALESCE(?, baseline_attended_classes),
+          syllabus_url = ?,
+          drive_folder_link = ?,
+          professor_email = ?,
+          cabin_room = ?
       WHERE id = ? AND user_id = ?
     `).run(
       code || null,
@@ -971,6 +1032,10 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
       attendedClasses !== undefined ? attendedClasses : null,
       baselineClassesHeld !== undefined ? baselineClassesHeld : null,
       baselineAttendedClasses !== undefined ? baselineAttendedClasses : null,
+      syllabusUrl !== undefined ? syllabusUrl : existing.syllabus_url,
+      driveFolderLink !== undefined ? driveFolderLink : existing.drive_folder_link,
+      professorEmail !== undefined ? professorEmail : existing.professor_email,
+      cabinRoom !== undefined ? cabinRoom : existing.cabin_room,
       id,
       req.user.id
     );
@@ -981,6 +1046,10 @@ app.put('/api/courses/:id', requireAuth, (req, res) => {
              attended_classes as attendedClasses,
              COALESCE(baseline_classes_held, 0) as baselineClassesHeld,
              COALESCE(baseline_attended_classes, 0) as baselineAttendedClasses,
+             syllabus_url as syllabusUrl,
+             drive_folder_link as driveFolderLink,
+             professor_email as professorEmail,
+             cabin_room as cabinRoom,
              COALESCE(semester_number, 1) as semesterNumber
       FROM courses WHERE id = ?
     `).get(id);
@@ -1018,18 +1087,20 @@ app.post('/api/slots', requireAuth, (req, res) => {
       isOneOff,
       specificDate,
       batch,
+      durationMultiplier,
       semesterNumber 
     } = req.body;
     const effectiveUserId = req.user.id || userId;
     const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
     const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
     const slotId = crypto.randomUUID();
+    const multiplier = Math.max(1, parseInt(durationMultiplier, 10) || 1);
 
     db.prepare(`
       INSERT INTO time_slots (
         id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes,
-        recurrence, is_one_off, specific_date, batch, semester_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        recurrence, is_one_off, specific_date, batch, duration_multiplier, semester_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       slotId,
       effectiveUserId,
@@ -1044,6 +1115,7 @@ app.post('/api/slots', requireAuth, (req, res) => {
       isOneOff ? 1 : 0,
       specificDate || null,
       batch || null,
+      multiplier,
       semNumber
     );
 
@@ -1055,6 +1127,7 @@ app.post('/api/slots', requireAuth, (req, res) => {
              (is_one_off = 1) as isOneOff,
              specific_date as specificDate,
              batch,
+             COALESCE(duration_multiplier, 1) as durationMultiplier,
              COALESCE(semester_number, 1) as semesterNumber
       FROM time_slots WHERE id = ?
     `).get(slotId);
@@ -1070,7 +1143,7 @@ app.post('/api/slots', requireAuth, (req, res) => {
 app.put('/api/slots/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    const { courseId, day, startTime, endTime, room, type, notes, recurrence, isOneOff, specificDate, batch } = req.body;
+    const { courseId, day, startTime, endTime, room, type, notes, recurrence, isOneOff, specificDate, batch, durationMultiplier } = req.body;
 
     const existing = db.prepare('SELECT * FROM time_slots WHERE id = ? AND user_id = ?').get(id, req.user.id);
     if (!existing) {
@@ -1089,7 +1162,8 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
           recurrence = COALESCE(?, recurrence),
           is_one_off = ?,
           specific_date = ?,
-          batch = ?
+          batch = ?,
+          duration_multiplier = ?
       WHERE id = ? AND user_id = ?
     `).run(
       courseId || null,
@@ -1103,6 +1177,7 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
       isOneOff !== undefined ? (isOneOff ? 1 : 0) : existing.is_one_off,
       specificDate !== undefined ? specificDate : existing.specific_date,
       batch !== undefined ? batch : existing.batch,
+      durationMultiplier !== undefined ? Math.max(1, parseInt(durationMultiplier, 10) || 1) : existing.duration_multiplier,
       id,
       req.user.id
     );
@@ -1115,6 +1190,7 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
              (is_one_off = 1) as isOneOff,
              specific_date as specificDate,
              batch,
+             COALESCE(duration_multiplier, 1) as durationMultiplier,
              COALESCE(semester_number, 1) as semesterNumber
       FROM time_slots WHERE id = ?
     `).get(id);
@@ -1122,9 +1198,6 @@ app.put('/api/slots/:id', requireAuth, (req, res) => {
     updated.isOneOff = Boolean(updated.isOneOff);
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
     res.status(500).json({ error: err.message });
   }
 });
@@ -1282,27 +1355,28 @@ app.delete('/api/tasks/:id', requireAuth, (req, res) => {
   }
 });
 
-// Log Attendance (Atomic Transaction)
+// Log Attendance (Atomic Transaction with Multi-Period Lab Weighting)
 app.post('/api/attendance', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, status, date, note, documentRef, semesterNumber } = req.body;
+    const { userId, courseId, status, date, note, documentRef, durationMultiplier, periodsCount, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
     const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
     const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
 
     const recordId = crypto.randomUUID();
     const logDate = date || new Date().toISOString().split('T')[0];
+    const multiplier = Math.max(1, parseInt(durationMultiplier || periodsCount, 10) || 1);
 
     const isPresent = status === 'present';
     const isCounted = status === 'present' || status === 'absent';
-    const heldIncrement = isCounted ? 1 : 0;
-    const attendedIncrement = isPresent ? 1 : 0;
+    const heldIncrement = isCounted ? multiplier : 0;
+    const attendedIncrement = isPresent ? multiplier : 0;
 
     const logTx = db.transaction(() => {
       db.prepare(`
-        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, document_ref, semester_number)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null, documentRef || null, semNumber);
+        INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, document_ref, periods_count, semester_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(recordId, effectiveUserId, courseId, logDate, status, note || null, documentRef || null, multiplier, semNumber);
 
       if (heldIncrement > 0) {
         db.prepare(`
@@ -1318,6 +1392,7 @@ app.post('/api/attendance', requireAuth, (req, res) => {
 
     const record = db.prepare(`
       SELECT id, course_id as courseId, log_date as date, status, note, document_ref as documentRef,
+             COALESCE(periods_count, 1) as periodsCount,
              COALESCE(semester_number, 1) as semesterNumber
       FROM attendance_records WHERE id = ?
     `).get(recordId);
@@ -1337,7 +1412,7 @@ app.post('/api/attendance', requireAuth, (req, res) => {
 app.delete('/api/attendance/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    const rec = db.prepare('SELECT id, user_id, course_id, status FROM attendance_records WHERE id = ?').get(id);
+    const rec = db.prepare('SELECT id, user_id, course_id, status, COALESCE(periods_count, 1) as periods_count FROM attendance_records WHERE id = ?').get(id);
 
     if (!rec) {
       return res.status(404).json({ error: 'Attendance record not found.' });
@@ -1346,10 +1421,11 @@ app.delete('/api/attendance/:id', requireAuth, (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Access denied.' });
     }
 
+    const mult = rec.periods_count || 1;
     const isPresent = rec.status === 'present';
     const isCounted = rec.status === 'present' || rec.status === 'absent';
-    const heldDecrement = isCounted ? 1 : 0;
-    const attendedDecrement = isPresent ? 1 : 0;
+    const heldDecrement = isCounted ? mult : 0;
+    const attendedDecrement = isPresent ? mult : 0;
 
     const deleteTx = db.transaction(() => {
       db.prepare('DELETE FROM attendance_records WHERE id = ?').run(id);
@@ -1381,14 +1457,14 @@ app.delete('/api/attendance/:id', requireAuth, (req, res) => {
   }
 });
 
-// Undo Attendance (Atomic Transaction & Accurate Reversion)
+// Undo Attendance (Atomic Transaction & Accurate Reversion with Period Weighting)
 app.post('/api/attendance/undo', requireAuth, (req, res) => {
   try {
     const { userId, courseId } = req.body;
     const effectiveUserId = req.user.id || userId;
 
     const latestRec = db.prepare(`
-      SELECT id, status FROM attendance_records
+      SELECT id, status, COALESCE(periods_count, 1) as periods_count FROM attendance_records
       WHERE user_id = ? AND course_id = ?
       ORDER BY created_at DESC LIMIT 1
     `).get(effectiveUserId, courseId);
@@ -1396,12 +1472,14 @@ app.post('/api/attendance/undo', requireAuth, (req, res) => {
     let wasPresent = false;
     let wasCounted = false;
     let deletedRecordId = null;
+    let mult = 1;
 
     const undoTx = db.transaction(() => {
       if (latestRec) {
         wasPresent = latestRec.status === 'present';
         wasCounted = latestRec.status === 'present' || latestRec.status === 'absent';
         deletedRecordId = latestRec.id;
+        mult = latestRec.periods_count || 1;
         db.prepare('DELETE FROM attendance_records WHERE id = ?').run(latestRec.id);
       } else {
         const currCourse = db.prepare('SELECT total_classes_held, attended_classes FROM courses WHERE id = ? AND user_id = ?').get(courseId, effectiveUserId);
@@ -1411,8 +1489,8 @@ app.post('/api/attendance/undo', requireAuth, (req, res) => {
         }
       }
 
-      const attendedDecrement = wasPresent ? 1 : 0;
-      const heldDecrement = wasCounted ? 1 : 0;
+      const attendedDecrement = wasPresent ? mult : 0;
+      const heldDecrement = wasCounted ? mult : 0;
 
       db.prepare(`
         UPDATE courses
@@ -1454,7 +1532,9 @@ app.get('/api/exams/:userId', requireAuth, (req, res) => {
       SELECT id, user_id as userId, course_id as courseId, title,
              exam_category as examCategory, exam_type as examType,
              exam_date as examDate, start_time as startTime, end_time as endTime,
-             room_or_lab as roomOrLab, max_marks as maxMarks,
+             room_or_lab as roomOrLab, seat_number as seatNumber,
+             COALESCE(session, 'morning') as session,
+             max_marks as maxMarks,
              marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
              COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
       FROM exams
@@ -1494,6 +1574,8 @@ app.post('/api/exams', requireAuth, (req, res) => {
       startTime,
       endTime,
       roomOrLab,
+      seatNumber,
+      session,
       maxMarks,
       marksObtained,
       syllabusUnits,
@@ -1511,9 +1593,9 @@ app.post('/api/exams', requireAuth, (req, res) => {
     db.prepare(`
       INSERT INTO exams (
         id, user_id, course_id, title, exam_category, exam_type, exam_date,
-        start_time, end_time, room_or_lab, max_marks, marks_obtained,
+        start_time, end_time, room_or_lab, seat_number, session, max_marks, marks_obtained,
         syllabus_units, semester_number, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       examId,
       effectiveUserId,
@@ -1525,6 +1607,8 @@ app.post('/api/exams', requireAuth, (req, res) => {
       startTime || null,
       endTime || null,
       roomOrLab || null,
+      seatNumber || null,
+      session || 'morning',
       maxMarks !== undefined && maxMarks !== '' ? Number(maxMarks) : null,
       marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : null,
       syllabusJson,
@@ -1536,7 +1620,9 @@ app.post('/api/exams', requireAuth, (req, res) => {
       SELECT id, user_id as userId, course_id as courseId, title,
              exam_category as examCategory, exam_type as examType,
              exam_date as examDate, start_time as startTime, end_time as endTime,
-             room_or_lab as roomOrLab, max_marks as maxMarks,
+             room_or_lab as roomOrLab, seat_number as seatNumber,
+             COALESCE(session, 'morning') as session,
+             max_marks as maxMarks,
              marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
              COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
       FROM exams WHERE id = ?
@@ -1572,6 +1658,8 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
       startTime,
       endTime,
       roomOrLab,
+      seatNumber,
+      session,
       maxMarks,
       marksObtained,
       syllabusUnits,
@@ -1597,6 +1685,8 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
           start_time = ?,
           end_time = ?,
           room_or_lab = ?,
+          seat_number = ?,
+          session = COALESCE(?, session),
           max_marks = ?,
           marks_obtained = ?,
           syllabus_units = ?,
@@ -1611,6 +1701,8 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
       startTime !== undefined ? startTime : existing.start_time,
       endTime !== undefined ? endTime : existing.end_time,
       roomOrLab !== undefined ? roomOrLab : existing.room_or_lab,
+      seatNumber !== undefined ? seatNumber : existing.seat_number,
+      session || null,
       maxMarks !== undefined && maxMarks !== '' ? Number(maxMarks) : existing.max_marks,
       marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : existing.marks_obtained,
       syllabusJson,
@@ -1623,7 +1715,9 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
       SELECT id, user_id as userId, course_id as courseId, title,
              exam_category as examCategory, exam_type as examType,
              exam_date as examDate, start_time as startTime, end_time as endTime,
-             room_or_lab as roomOrLab, max_marks as maxMarks,
+             room_or_lab as roomOrLab, seat_number as seatNumber,
+             COALESCE(session, 'morning') as session,
+             max_marks as maxMarks,
              marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
              COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
       FROM exams WHERE id = ?
@@ -1651,6 +1745,81 @@ app.delete('/api/exams/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     db.prepare('DELETE FROM exams WHERE id = ? AND user_id = ?').run(id, req.user.id);
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// ACADEMIC HOLIDAYS & RECESS ROUTES
+// ----------------------------------------------------------------------------
+
+// Fetch Holidays
+app.get('/api/holidays/:userId', requireAuth, (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (req.user.id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Access denied.' });
+    }
+
+    const holidays = db.prepare(`
+      SELECT id, user_id as userId, title, start_date as startDate, end_date as endDate,
+             (is_off_day = 1) as isOffDay, notes,
+             COALESCE(semester_number, 1) as semesterNumber, created_at as createdAt
+      FROM academic_holidays
+      WHERE user_id = ?
+      ORDER BY start_date ASC
+    `).all(userId).map(h => ({ ...h, isOffDay: Boolean(h.isOffDay) }));
+
+    res.json(holidays);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add Holiday
+app.post('/api/holidays', requireAuth, (req, res) => {
+  try {
+    const { userId, title, startDate, endDate, isOffDay, notes, semesterNumber } = req.body;
+    const effectiveUserId = req.user.id || userId;
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
+    const holidayId = crypto.randomUUID();
+
+    db.prepare(`
+      INSERT INTO academic_holidays (id, user_id, title, start_date, end_date, is_off_day, notes, semester_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      holidayId,
+      effectiveUserId,
+      title.trim(),
+      startDate,
+      endDate,
+      isOffDay === false ? 0 : 1,
+      notes || null,
+      semNumber
+    );
+
+    const created = db.prepare(`
+      SELECT id, user_id as userId, title, start_date as startDate, end_date as endDate,
+             (is_off_day = 1) as isOffDay, notes,
+             COALESCE(semester_number, 1) as semesterNumber, created_at as createdAt
+      FROM academic_holidays WHERE id = ?
+    `).get(holidayId);
+
+    created.isOffDay = Boolean(created.isOffDay);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Holiday
+app.delete('/api/holidays/:id', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare('DELETE FROM academic_holidays WHERE id = ? AND user_id = ?').run(id, req.user.id);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });

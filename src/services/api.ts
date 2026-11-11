@@ -1,4 +1,4 @@
-import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam } from '../types';
+import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam, AcademicHoliday } from '../types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'academiasync_auth_token';
@@ -64,6 +64,7 @@ export function getLocalStudentData(userId: string): StudentData {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (!parsed.exams) parsed.exams = [];
+      if (!parsed.holidays) parsed.holidays = [];
       return parsed;
     }
   } catch {
@@ -76,6 +77,7 @@ export function getLocalStudentData(userId: string): StudentData {
     attendanceRecords: [],
     semesters: [],
     exams: [],
+    holidays: [],
     activeSemesterNumber: 1,
     theme: 'dark-slate',
     activeView: 'dashboard',
@@ -526,6 +528,67 @@ export async function apiDeleteExam(examId: string, userId: string = 'local_user
   }
 }
 
+// ----------------------------------------------------------------------------
+// Academic Holidays & Recess Operations
+// ----------------------------------------------------------------------------
+
+export async function apiGetHolidays(userId: string): Promise<AcademicHoliday[]> {
+  try {
+    const res = await fetch(`${API_BASE}/holidays/${userId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  return data.holidays || [];
+}
+
+export async function apiAddHoliday(holiday: Omit<AcademicHoliday, 'id' | 'createdAt'>): Promise<AcademicHoliday> {
+  try {
+    const res = await fetch(`${API_BASE}/holidays`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(holiday),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const userId = holiday.userId || 'local_user';
+  const data = getLocalStudentData(userId);
+  if (!data.holidays) data.holidays = [];
+  const newHoliday: AcademicHoliday = {
+    ...holiday,
+    id: `hol_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    createdAt: new Date().toISOString(),
+  };
+  data.holidays.push(newHoliday);
+  saveLocalStudentData(userId, data);
+  return newHoliday;
+}
+
+export async function apiDeleteHoliday(holidayId: string, userId: string = 'local_user'): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/holidays/${holidayId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return;
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  if (data.holidays) {
+    data.holidays = data.holidays.filter((h) => h.id !== holidayId);
+    saveLocalStudentData(userId, data);
+  }
+}
+
 export async function apiLogAttendance(
   userId: string, 
   courseId: string, 
@@ -533,13 +596,15 @@ export async function apiLogAttendance(
   date?: string,
   note?: string,
   semesterNumber?: number,
-  documentRef?: string
+  documentRef?: string,
+  durationMultiplier?: number
 ): Promise<{ record: AttendanceRecord; updatedCourse: Course }> {
+  const mult = Math.max(1, Number(durationMultiplier) || 1);
   try {
     const res = await fetch(`${API_BASE}/attendance`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ userId, courseId, status, date, note, semesterNumber, documentRef }),
+      body: JSON.stringify({ userId, courseId, status, date, note, semesterNumber, documentRef, durationMultiplier: mult }),
     });
     if (res.ok) return await res.json();
   } catch {
@@ -556,19 +621,21 @@ export async function apiLogAttendance(
     status,
     note,
     documentRef,
+    periodsCount: mult,
     semesterNumber: semesterNumber || data.activeSemesterNumber || 1,
   };
   data.attendanceRecords.unshift(record);
 
   const isCounted = status === 'present' || status === 'absent';
   if (course && isCounted) {
-    course.totalClasses = (course.totalClasses || 0) + 1;
+    course.totalClasses = (course.totalClasses || 0) + mult;
     if (status === 'present') {
-      course.attendedClasses = (course.attendedClasses || 0) + 1;
+      course.attendedClasses = (course.attendedClasses || 0) + mult;
     }
   }
 
   if (!data.exams) data.exams = [];
+  if (!data.holidays) data.holidays = [];
   saveLocalStudentData(userId, data);
   return {
     record,
@@ -577,8 +644,8 @@ export async function apiLogAttendance(
       code: 'COURSE',
       name: 'Course',
       color: '#3b82f6',
-      totalClasses: isCounted ? 1 : 0,
-      attendedClasses: status === 'present' ? 1 : 0,
+      totalClasses: isCounted ? mult : 0,
+      attendedClasses: status === 'present' ? mult : 0,
     },
   };
 }

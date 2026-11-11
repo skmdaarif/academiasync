@@ -98,6 +98,8 @@ export function ExamCountdownHub({
   const [formStartTime, setFormStartTime] = useState('09:00');
   const [formEndTime, setFormEndTime] = useState('12:00');
   const [formRoomOrLab, setFormRoomOrLab] = useState('');
+  const [formSeatNumber, setFormSeatNumber] = useState('');
+  const [formSession, setFormSession] = useState<'morning' | 'afternoon'>('morning');
   const [formMaxMarks, setFormMaxMarks] = useState<string>('50');
   const [formMarksObtained, setFormMarksObtained] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
@@ -107,6 +109,7 @@ export function ExamCountdownHub({
   // Target Grade Calculator State
   const [calculatorCourseId, setCalculatorCourseId] = useState<string>('');
   const [targetDesiredGrade, setTargetDesiredGrade] = useState<number>(80); // 80% for A grade
+  const [evaluationScheme, setEvaluationScheme] = useState<'50-50' | '40-60' | '30-70'>('50-50');
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
@@ -141,6 +144,8 @@ export function ExamCountdownHub({
     setFormStartTime('09:00');
     setFormEndTime('12:00');
     setFormRoomOrLab('');
+    setFormSeatNumber('');
+    setFormSession('morning');
     setFormMaxMarks('50');
     setFormMarksObtained('');
     setFormNotes('');
@@ -161,6 +166,8 @@ export function ExamCountdownHub({
     setFormStartTime(exam.startTime || '09:00');
     setFormEndTime(exam.endTime || '12:00');
     setFormRoomOrLab(exam.roomOrLab || '');
+    setFormSeatNumber(exam.seatNumber || '');
+    setFormSession(exam.session || 'morning');
     setFormMaxMarks(exam.maxMarks !== undefined && exam.maxMarks !== null ? String(exam.maxMarks) : '');
     setFormMarksObtained(exam.marksObtained !== undefined && exam.marksObtained !== null ? String(exam.marksObtained) : '');
     setFormNotes(exam.notes || '');
@@ -186,6 +193,8 @@ export function ExamCountdownHub({
         startTime: formStartTime,
         endTime: formEndTime,
         roomOrLab: formRoomOrLab.trim() || undefined,
+        seatNumber: formSeatNumber.trim() || undefined,
+        session: formSession,
         maxMarks: parsedMax,
         marksObtained: parsedObtained,
         syllabusUnits: formUnits,
@@ -201,6 +210,8 @@ export function ExamCountdownHub({
         startTime: formStartTime,
         endTime: formEndTime,
         roomOrLab: formRoomOrLab.trim() || undefined,
+        seatNumber: formSeatNumber.trim() || undefined,
+        session: formSession,
         maxMarks: parsedMax,
         marksObtained: parsedObtained,
         syllabusUnits: formUnits,
@@ -419,7 +430,7 @@ export function ExamCountdownHub({
                   )}
 
                   {/* Schedule Details Strip */}
-                  <div className="flex flex-wrap items-center gap-3 mt-3 text-xs font-semibold text-slate-300">
+                  <div className="flex flex-wrap items-center gap-2 mt-3 text-xs font-semibold text-slate-300">
                     <span className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5">
                       <Calendar className="w-3.5 h-3.5 text-indigo-400" />
                       {exam.examDate}
@@ -430,10 +441,20 @@ export function ExamCountdownHub({
                         {formatTime12h(exam.startTime)} {exam.endTime ? `- ${formatTime12h(exam.endTime)}` : ''}
                       </span>
                     )}
+                    {exam.session && (
+                      <span className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5 capitalize text-slate-300">
+                        {exam.session === 'morning' ? '☀️ Morning' : '🌅 Afternoon'}
+                      </span>
+                    )}
                     {exam.roomOrLab && (
                       <span className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5">
                         <MapPin className="w-3.5 h-3.5 text-rose-400" />
                         {exam.roomOrLab}
+                      </span>
+                    )}
+                    {exam.seatNumber && (
+                      <span className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5 font-mono text-amber-300">
+                        🪑 Desk: {exam.seatNumber}
                       </span>
                     )}
                   </div>
@@ -622,9 +643,23 @@ export function ExamCountdownHub({
               Target Grade & ETT Finals Score Predictor
             </h3>
           </div>
-          <span className="text-xs text-slate-400">
-            Simulate what you need in End-Terms based on your MTT & CA scores
-          </span>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400">Scheme (CIE : SEE):</span>
+            {(['50-50', '40-60', '30-70'] as const).map((scheme) => (
+              <button
+                key={scheme}
+                type="button"
+                onClick={() => setEvaluationScheme(scheme)}
+                className={`px-2 py-0.5 rounded-lg font-mono text-[11px] font-bold transition-all ${
+                  evaluationScheme === scheme
+                    ? 'bg-indigo-500 text-white shadow'
+                    : 'bg-white/5 text-slate-400 hover:text-white'
+                }`}
+              >
+                {scheme}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
@@ -680,37 +715,49 @@ export function ExamCountdownHub({
               }
 
               const courseExams = nativeExams.filter((e) => e.courseId === calculatorCourseId);
-              const scoredExams = courseExams.filter((e) => e.marksObtained !== undefined && e.maxMarks);
+              // Internal evaluations are MTT, CA, Viva
+              const internalExams = courseExams.filter(
+                (e) => e.marksObtained !== undefined && e.maxMarks && e.examCategory !== 'ett'
+              );
 
-              const totalMax = scoredExams.reduce((acc, e) => acc + (e.maxMarks || 0), 0);
-              const totalObtained = scoredExams.reduce((acc, e) => acc + (e.marksObtained || 0), 0);
+              const totalMax = internalExams.reduce((acc, e) => acc + (e.maxMarks || 0), 0);
+              const totalObtained = internalExams.reduce((acc, e) => acc + (e.marksObtained || 0), 0);
 
               if (totalMax === 0) {
                 return (
                   <p className="text-xs text-slate-300 text-center">
-                    No scored assessments yet. Aim for {targetDesiredGrade}% on all upcoming tests!
+                    No scored internal assessments yet. Aim for {targetDesiredGrade}% on all upcoming tests!
                   </p>
                 );
               }
 
-              const currentPct = Math.round((totalObtained / totalMax) * 100);
-              // Assume 50-mark ETT
-              const neededIn50 = Math.ceil(Math.max(0, ((targetDesiredGrade / 100) * (totalMax + 50)) - totalObtained));
+              // Scheme weights
+              const [cieWeight, seeWeight] = evaluationScheme.split('-').map(Number);
+              const ciePct = (totalObtained / totalMax) * 100;
+              const internalContributed = (ciePct * cieWeight) / 100;
+              const marksNeededInSeeScale = Math.max(0, targetDesiredGrade - internalContributed);
+              const seePctRequired = Math.min(100, (marksNeededInSeeScale / seeWeight) * 100);
+
+              const neededIn50 = Math.ceil((seePctRequired / 100) * 50);
+              const neededIn100 = Math.ceil(seePctRequired);
 
               return (
-                <div>
-                  <div className="flex justify-between items-center text-xs font-bold text-white mb-1">
-                    <span>Current Score: {totalObtained}/{totalMax} ({currentPct}%)</span>
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center text-xs font-bold text-white mb-0.5">
+                    <span>CIE Score: {totalObtained}/{totalMax} ({Math.round(ciePct)}%)</span>
                     <span className="text-amber-400">Target: {targetDesiredGrade}%</span>
                   </div>
-                  <p className="text-xs text-indigo-200">
-                    {neededIn50 > 50 ? (
+                  <div className="text-[11px] text-indigo-300">
+                    Scheme: {evaluationScheme} • Contributes {internalContributed.toFixed(1)} / {cieWeight} pts
+                  </div>
+                  <p className="text-xs text-indigo-200 pt-0.5">
+                    {marksNeededInSeeScale > seeWeight ? (
                       <span className="text-rose-400 font-bold">
-                        ⚠️ Requires {neededIn50}/50 (over 100%) to hit {targetDesiredGrade}%. Focus on extra credit or maxing finals!
+                        ⚠️ Requires {neededIn100}/100 in End-Terms to reach {targetDesiredGrade}%. Maximize final prep!
                       </span>
                     ) : (
                       <span>
-                        🎯 You need at least <strong className="text-white font-mono">{neededIn50}/50</strong> in your End-Term Finals (ETT) to secure your {targetDesiredGrade}% target!
+                        🎯 In ETT Finals, score at least <strong className="text-white font-mono">{neededIn50}/50</strong> (or <strong className="text-white font-mono">{neededIn100}/100</strong>) to hit your {targetDesiredGrade}% target!
                       </span>
                     )}
                   </p>
@@ -860,8 +907,8 @@ export function ExamCountdownHub({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
                     Room / Lab Venue
                   </label>
@@ -874,6 +921,35 @@ export function ExamCountdownHub({
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Desk / Seat #
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Desk B-14"
+                    value={formSeatNumber}
+                    onChange={(e) => setFormSeatNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-mono focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Session
+                  </label>
+                  <select
+                    value={formSession}
+                    onChange={(e) => setFormSession(e.target.value as 'morning' | 'afternoon')}
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                  >
+                    <option value="morning" className="bg-slate-900">Morning (FN)</option>
+                    <option value="afternoon" className="bg-slate-900">Afternoon (AN)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
                     Maximum Marks

@@ -58,6 +58,7 @@ export function AddModal({
   const [slotEndTime, setSlotEndTime] = useState(initialSlot?.endTime || '10:00');
   const [slotRoom, setSlotRoom] = useState(initialSlot?.room || '');
   const [slotType, setSlotType] = useState<SlotType>(initialSlot?.type || 'Lecture');
+  const [slotMultiplier, setSlotMultiplier] = useState<number>(initialSlot?.durationMultiplier || 1);
   const [slotRecurrence, setSlotRecurrence] = useState<SlotRecurrence>(initialSlot?.recurrence || 'all');
   const [slotIsOneOff, setSlotIsOneOff] = useState<boolean>(initialSlot?.isOneOff || false);
   const [slotSpecificDate, setSlotSpecificDate] = useState<string>(initialSlot?.specificDate || new Date().toISOString().split('T')[0]);
@@ -83,6 +84,10 @@ export function AddModal({
   const [courseColor, setCourseColor] = useState(PRESET_COLORS[0]);
   const [courseCredits, setCourseCredits] = useState(3);
   const [courseTarget, setCourseTarget] = useState(defaultTargetAttendance || 75);
+  const [courseSyllabusUrl, setCourseSyllabusUrl] = useState('');
+  const [courseDriveLink, setCourseDriveLink] = useState('');
+  const [courseProfEmail, setCourseProfEmail] = useState('');
+  const [courseCabinRoom, setCourseCabinRoom] = useState('');
   const [isMidSemester, setIsMidSemester] = useState(false);
   const [pastTotalClasses, setPastTotalClasses] = useState(0);
   const [pastAttendedClasses, setPastAttendedClasses] = useState(0);
@@ -133,6 +138,7 @@ export function AddModal({
         endTime: slotEndTime,
         room: slotRoom.trim() || undefined,
         type: slotType,
+        durationMultiplier: slotMultiplier,
         recurrence: slotRecurrence,
         isOneOff: slotIsOneOff,
         specificDate: slotIsOneOff ? slotSpecificDate : undefined,
@@ -147,6 +153,7 @@ export function AddModal({
         endTime: slotEndTime,
         room: slotRoom.trim() || undefined,
         type: slotType,
+        durationMultiplier: slotMultiplier,
         recurrence: slotRecurrence,
         isOneOff: slotIsOneOff,
         specificDate: slotIsOneOff ? slotSpecificDate : undefined,
@@ -198,6 +205,10 @@ export function AddModal({
       color: courseColor,
       credits: courseCredits,
       attendanceGoal: courseTarget,
+      syllabusUrl: courseSyllabusUrl.trim() || undefined,
+      driveFolderLink: courseDriveLink.trim() || undefined,
+      professorEmail: courseProfEmail.trim() || undefined,
+      cabinRoom: courseCabinRoom.trim() || undefined,
       totalClasses: totalHeld,
       attendedClasses: attended,
     });
@@ -313,7 +324,7 @@ export function AddModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Start Time *
@@ -321,7 +332,14 @@ export function AddModal({
                 <input
                   type="time"
                   value={slotStartTime}
-                  onChange={(e) => setSlotStartTime(e.target.value)}
+                  onChange={(e) => {
+                    setSlotStartTime(e.target.value);
+                    const sm = parseTimeToMinutes(e.target.value);
+                    const em = parseTimeToMinutes(slotEndTime);
+                    if (em - sm >= 140) setSlotMultiplier(3);
+                    else if (em - sm >= 80) setSlotMultiplier(2);
+                    else setSlotMultiplier(1);
+                  }}
                   required
                   className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
                 />
@@ -334,10 +352,32 @@ export function AddModal({
                 <input
                   type="time"
                   value={slotEndTime}
-                  onChange={(e) => setSlotEndTime(e.target.value)}
+                  onChange={(e) => {
+                    setSlotEndTime(e.target.value);
+                    const sm = parseTimeToMinutes(slotStartTime);
+                    const em = parseTimeToMinutes(e.target.value);
+                    if (em - sm >= 140) setSlotMultiplier(3);
+                    else if (em - sm >= 80) setSlotMultiplier(2);
+                    else setSlotMultiplier(1);
+                  }}
                   required
                   className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Period Weight
+                </label>
+                <select
+                  value={slotMultiplier}
+                  onChange={(e) => setSlotMultiplier(parseInt(e.target.value, 10) || 1)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none font-bold"
+                >
+                  <option value={1} className="bg-slate-900">1 Period (1 hr)</option>
+                  <option value={2} className="bg-slate-900">2 Periods (2 hrs)</option>
+                  <option value={3} className="bg-slate-900">3 Periods (3 hrs)</option>
+                </select>
               </div>
             </div>
 
@@ -730,6 +770,66 @@ export function AddModal({
                   onChange={(e) => setCourseTarget(parseInt(e.target.value, 10) || 75)}
                   className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
                 />
+              </div>
+            </div>
+
+            {/* Course Academic Resources & Faculty Links */}
+            <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
+              <span className="text-xs font-bold text-slate-300 block">
+                Academic Resources & Faculty Directory (Optional)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                    Google Drive / LMS Folder Link
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://drive.google.com/..."
+                    value={courseDriveLink}
+                    onChange={(e) => setCourseDriveLink(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                    Syllabus Link / PDF URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://.../syllabus.pdf"
+                    value={courseSyllabusUrl}
+                    onChange={(e) => setCourseSyllabusUrl(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                    Faculty Email
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="prof.name@university.edu"
+                    value={courseProfEmail}
+                    onChange={(e) => setCourseProfEmail(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                    Faculty Office / Cabin Room
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Block 3, Cabin 402"
+                    value={courseCabinRoom}
+                    onChange={(e) => setCourseCabinRoom(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 

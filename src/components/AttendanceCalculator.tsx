@@ -406,6 +406,48 @@ export function AttendanceCalculator({
                   </p>
                 )}
 
+                {/* Course Resource Links & Cabin */}
+                {(course.driveFolderLink || course.syllabusUrl || course.professorEmail || course.cabinRoom) && (
+                  <div className="flex items-center gap-1.5 mt-2.5 flex-wrap text-[11px]">
+                    {course.driveFolderLink && (
+                      <a
+                        href={course.driveFolderLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 transition-colors"
+                        title="Open Course Drive / LMS Folder"
+                      >
+                        📁 Drive
+                      </a>
+                    )}
+                    {course.syllabusUrl && (
+                      <a
+                        href={course.syllabusUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 transition-colors"
+                        title="Open Course Syllabus"
+                      >
+                        📄 Syllabus
+                      </a>
+                    )}
+                    {course.professorEmail && (
+                      <a
+                        href={`mailto:${course.professorEmail}`}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20 transition-colors"
+                        title={`Email ${course.professor || 'Professor'}`}
+                      >
+                        ✉️ Email
+                      </a>
+                    )}
+                    {course.cabinRoom && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/5 text-slate-300 border border-white/10">
+                        🚪 Cabin: {course.cabinRoom}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Progress Bar with Dual Markers */}
                 <div className="mt-4">
                   <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-1">
@@ -664,6 +706,61 @@ export function AttendanceCalculator({
                       })
                     }
                     className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Academic Resources & Faculty Info */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Drive / LMS Folder Link
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://drive.google.com/..."
+                    value={editingCourse.driveFolderLink || ''}
+                    onChange={(e) => setEditingCourse({ ...editingCourse, driveFolderLink: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Syllabus Link / PDF URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://.../syllabus.pdf"
+                    value={editingCourse.syllabusUrl || ''}
+                    onChange={(e) => setEditingCourse({ ...editingCourse, syllabusUrl: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Faculty Email
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="prof@university.edu"
+                    value={editingCourse.professorEmail || ''}
+                    onChange={(e) => setEditingCourse({ ...editingCourse, professorEmail: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Office / Cabin Room
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Block 2, Cabin 301"
+                    value={editingCourse.cabinRoom || ''}
+                    onChange={(e) => setEditingCourse({ ...editingCourse, cabinRoom: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
                   />
                 </div>
               </div>

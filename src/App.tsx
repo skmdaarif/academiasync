@@ -7,7 +7,8 @@ import {
   UserAccount, 
   ThemeKey, 
   AttendanceStatus,
-  Exam
+  Exam,
+  AcademicHoliday
 } from './types';
 import { 
   apiFetchStudentData, 
@@ -23,6 +24,8 @@ import {
   apiAddExam,
   apiUpdateExam,
   apiDeleteExam,
+  apiAddHoliday,
+  apiDeleteHoliday,
   apiLogAttendance, 
   apiUndoAttendance,
   apiDeleteAttendanceRecord,
@@ -42,6 +45,7 @@ import { TaskManager } from './components/TaskManager';
 import { AttendanceCalculator } from './components/AttendanceCalculator';
 import { AttendanceHistoryModal } from './components/AttendanceHistoryModal';
 import { ExamCountdownHub } from './components/ExamCountdownHub';
+import { HolidayManagerModal } from './components/HolidayManagerModal';
 import { AddModal } from './components/AddModal';
 import { ExportModal } from './components/ExportModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -85,6 +89,7 @@ export function App() {
   const [showPdfImportModal, setShowPdfImportModal] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showVaultModal, setShowVaultModal] = useState(false);
+  const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [selectedSemesterNumber, setSelectedSemesterNumber] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
@@ -224,20 +229,50 @@ export function App() {
     status: AttendanceStatus, 
     date?: string, 
     note?: string,
-    documentRef?: string
+    documentRef?: string,
+    durationMultiplier?: number
   ) => {
     try {
       const activeSem = currentUser.activeSemesterNumber || parseInt(String(currentUser.semester).replace(/\D/g, ''), 10) || 1;
-      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note, activeSem, documentRef);
+      const res = await apiLogAttendance(currentUser.id, courseId, status, date, note, activeSem, documentRef, durationMultiplier);
       setState((prev) => ({
         ...prev,
         courses: prev.courses.map((c) => (c.id === courseId ? { ...c, totalClasses: res.updatedCourse.totalClasses, attendedClasses: res.updatedCourse.attendedClasses } : c)),
         attendanceRecords: [res.record, ...prev.attendanceRecords],
       }));
-      showToast(`Logged attendance as ${status.toUpperCase()}`, 'success');
+      const periodsLabel = durationMultiplier && durationMultiplier > 1 ? ` (${durationMultiplier} periods)` : '';
+      showToast(`Logged attendance as ${status.toUpperCase()}${periodsLabel}`, 'success');
     } catch (err) {
       console.error('Error logging attendance in database:', err);
       showToast('Failed to log attendance.', 'error');
+    }
+  };
+
+  const handleAddHoliday = async (holiday: Omit<AcademicHoliday, 'id' | 'createdAt'>) => {
+    try {
+      const created = await apiAddHoliday({ ...holiday, userId: currentUser.id });
+      setState((prev) => ({
+        ...prev,
+        holidays: [...(prev.holidays || []), created],
+      }));
+      showToast(`Added holiday: ${created.title}`, 'success');
+    } catch (err) {
+      console.error('Error adding holiday:', err);
+      showToast('Failed to add holiday.', 'error');
+    }
+  };
+
+  const handleDeleteHoliday = async (holidayId: string) => {
+    try {
+      await apiDeleteHoliday(holidayId, currentUser.id);
+      setState((prev) => ({
+        ...prev,
+        holidays: (prev.holidays || []).filter((h) => h.id !== holidayId),
+      }));
+      showToast('Holiday period removed.', 'info');
+    } catch (err) {
+      console.error('Error removing holiday:', err);
+      showToast('Failed to remove holiday.', 'error');
     }
   };
 
@@ -768,6 +803,7 @@ export function App() {
               state={viewState}
               onMarkAttendance={handleMarkAttendance}
               onViewChange={handleViewChange}
+              onOpenHolidays={() => setShowHolidayModal(true)}
               onOpenAddModal={(type) => {
           if (isViewingHistorical) {
             showToast(`Viewing historical archive (Semester ${currentViewSemesterNumber}). Switch to active semester in header to add entries.`, 'warning');
@@ -804,6 +840,7 @@ export function App() {
                     state={viewState}
                     onOpenAddSlot={() => setAddModalType('slot')}
                     onOpenAddCourse={() => setAddModalType('course')}
+                    onOpenHolidays={() => setShowHolidayModal(true)}
                     onEditSlot={(slot) => setEditingSlot(slot)}
                     onDeleteSlot={handleDeleteSlot}
                     onUpdateCourse={handleUpdateCourse}
@@ -886,6 +923,7 @@ export function App() {
                 }
                 setShowPdfImportModal(true);
               }}
+              onOpenHolidays={() => setShowHolidayModal(true)}
               onEditSlot={(slot) => {
                 if (isViewingHistorical) {
                   showToast(`Semester ${currentViewSemesterNumber} records are preserved (Read-Only).`, 'info');
@@ -1021,6 +1059,15 @@ export function App() {
           onClose={() => setShowPromoteModal(false)}
           onPromote={handlePromoteSemester}
           onOpenPdfScanner={() => setShowPdfImportModal(true)}
+        />
+      )}
+
+      {showHolidayModal && (
+        <HolidayManagerModal
+          state={state}
+          onClose={() => setShowHolidayModal(false)}
+          onAddHoliday={handleAddHoliday}
+          onDeleteHoliday={handleDeleteHoliday}
         />
       )}
 

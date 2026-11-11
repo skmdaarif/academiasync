@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { StudentData, Course, TimeSlot, UserAccount, DayOfWeek } from '../types';
 import { THEMES } from '../styles/themes';
 import { parseTimetablePdf, ParsedTimetableResult, ParsedTimeSlot } from '../utils/pdfTimetableParser';
-import { formatTime12h, DAYS_ORDER } from '../utils/timeUtils';
+import { formatTime12h, DAYS_ORDER, getSlotDurationMultiplier } from '../utils/timeUtils';
 import {
   X,
   UploadCloud,
@@ -49,6 +49,26 @@ export function PdfImportModal({
   // Import mode
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [updateProfile, setUpdateProfile] = useState(true);
+
+  const overlappingSlots = useMemo(() => {
+    if (!parsedData) return [];
+    const overlaps: { day: DayOfWeek; time: string; slots: ParsedTimeSlot[] }[] = [];
+    const byDayTime = new Map<string, ParsedTimeSlot[]>();
+    parsedData.slots
+      .filter((s) => selectedSlotIds.has(s.id))
+      .forEach((s) => {
+        const key = `${s.day}_${s.startTime}_${s.endTime}`;
+        if (!byDayTime.has(key)) byDayTime.set(key, []);
+        byDayTime.get(key)!.push(s);
+      });
+    byDayTime.forEach((slotList, key) => {
+      if (slotList.length > 1) {
+        const [day, startTime, endTime] = key.split('_');
+        overlaps.push({ day: day as DayOfWeek, time: `${formatTime12h(startTime)} - ${formatTime12h(endTime)}`, slots: slotList });
+      }
+    });
+    return overlaps;
+  }, [parsedData, selectedSlotIds]);
 
   const handleProcessFile = async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
@@ -166,6 +186,8 @@ export function PdfImportModal({
           endTime: s.endTime,
           room: s.room || course.defaultRoom,
           type: s.type,
+          durationMultiplier: getSlotDurationMultiplier({ startTime: s.startTime, endTime: s.endTime }),
+          batch: s.group && s.group !== 'All' && s.group !== '0' ? `Batch ${s.group}` : undefined,
         });
       });
 
@@ -387,6 +409,49 @@ export function PdfImportModal({
                 ))}
               </div>
             </div>
+
+            {/* Elective Basket Conflict Resolver */}
+            {overlappingSlots.length > 0 && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Parallel Elective Tracks Detected ({overlappingSlots.length})</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Your university schedule has simultaneous elective sessions at the same hour. Pick your enrolled subject below to automatically deselect alternative electives:
+                </p>
+                <div className="space-y-2">
+                  {overlappingSlots.map((ov, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="text-xs font-mono text-amber-200">
+                        {ov.day} • {ov.time}
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {ov.slots.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedSlotIds((prev) => {
+                                const next = new Set(prev);
+                                ov.slots.forEach((os) => {
+                                  if (os.id !== s.id) next.delete(os.id);
+                                });
+                                next.add(s.id);
+                                return next;
+                              });
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                          >
+                            Keep {s.courseCode} Only
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Weekly Slots Preview List */}
             <div>
