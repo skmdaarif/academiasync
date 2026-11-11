@@ -29,7 +29,7 @@ interface HeaderProps {
   onOpenPromoteModal?: () => void;
   onViewChange: (view: StudentData['activeView']) => void;
   onThemeChange: (theme: ThemeKey) => void;
-  onOpenAddModal: (type: 'slot' | 'task' | 'course') => void;
+  onOpenAddModal: (type: 'slot' | 'task' | 'course' | 'exam') => void;
   onOpenExport: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
@@ -336,6 +336,21 @@ export function Header({
           {/* Right Action Bar */}
           <div className="flex items-center gap-2 sm:gap-3">
             
+            {/* Database Engine Indicator */}
+            <div 
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-medium"
+              style={{
+                backgroundColor: currentTheme.cardBg,
+                borderColor: currentTheme.cardBorder,
+              }}
+              title={user?.storageMode === 'local' ? 'Running in Offline Browser Local Storage' : 'Connected to Zero-Config Local SQLite Database'}
+            >
+              <span className={`w-2 h-2 rounded-full ${user?.storageMode === 'local' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'}`} />
+              <span style={{ color: currentTheme.textSecondary }}>
+                {user?.storageMode === 'local' ? 'Offline Local' : 'SQLite DB'}
+              </span>
+            </div>
+
             {/* Live Clock Badge */}
             <div 
               className="hidden xl:flex flex-col items-end px-3 py-1 rounded-xl border text-right"
@@ -368,7 +383,7 @@ export function Header({
 
               {showAddMenu && (
                 <div 
-                  className="absolute right-0 mt-2 w-48 rounded-2xl p-2 border shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
+                  className="absolute right-0 mt-2 w-52 rounded-2xl p-2 border shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
                   style={{
                     backgroundColor: currentTheme.headerBg,
                     borderColor: currentTheme.cardBorder,
@@ -384,7 +399,7 @@ export function Header({
                     style={{ color: currentTheme.textPrimary }}
                   >
                     <BookOpen className="w-4 h-4 text-amber-400" />
-                    Add Course
+                    <span>Add Course</span>
                   </button>
                   <button
                     onClick={() => {
@@ -395,7 +410,7 @@ export function Header({
                     style={{ color: currentTheme.textPrimary }}
                   >
                     <Calendar className="w-4 h-4 text-indigo-400" />
-                    Add Class Slot
+                    <span>Add Class Slot</span>
                   </button>
                   <button
                     onClick={() => {
@@ -406,7 +421,18 @@ export function Header({
                     style={{ color: currentTheme.textPrimary }}
                   >
                     <CheckSquare className="w-4 h-4 text-emerald-400" />
-                    Add Task / Exam
+                    <span>Add Assignment / Task</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onOpenAddModal('exam');
+                      setShowAddMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-white/10 text-left"
+                    style={{ color: currentTheme.textPrimary }}
+                  >
+                    <Flame className="w-4 h-4 text-rose-400" />
+                    <span>Schedule Exam / Test</span>
                   </button>
                 </div>
               )}

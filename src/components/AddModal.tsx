@@ -8,14 +8,17 @@ import {
   SlotType, 
   TaskPriority, 
   TaskCategory,
-  SlotRecurrence 
+  SlotRecurrence,
+  Exam,
+  ExamCategory,
+  ExamType
 } from '../types';
 import { THEMES } from '../styles/themes';
 import { DAYS_ORDER, checkSlotOverlap, parseTimeToMinutes } from '../utils/timeUtils';
-import { X, Plus, Calendar, CheckSquare, BookOpen, Trash2, AlertCircle } from 'lucide-react';
+import { X, Plus, Calendar, CheckSquare, BookOpen, Trash2, AlertCircle, Flame, Link as LinkIcon } from 'lucide-react';
 
 interface AddModalProps {
-  type: 'slot' | 'task' | 'course';
+  type: 'slot' | 'task' | 'course' | 'exam';
   state: StudentData;
   defaultTargetAttendance?: number;
   initialSlot?: TimeSlot | null;
@@ -24,6 +27,7 @@ interface AddModalProps {
   onUpdateSlot?: (slot: TimeSlot) => void;
   onAddTask: (task: Omit<Task, 'id' | 'createdAt' | 'userId'>) => void;
   onAddCourse: (course: Omit<Course, 'id' | 'userId'>) => void;
+  onAddExam?: (exam: Omit<Exam, 'id' | 'createdAt' | 'userId'>) => void;
 }
 
 const PRESET_COLORS = [
@@ -48,6 +52,7 @@ export function AddModal({
   onUpdateSlot,
   onAddTask,
   onAddCourse,
+  onAddExam,
 }: AddModalProps) {
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
@@ -74,7 +79,21 @@ export function AddModal({
   const [taskDueTime, setTaskDueTime] = useState('23:59');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('medium');
   const [taskCategory, setTaskCategory] = useState<TaskCategory>('assignment');
+  const [taskSubmissionUrl, setTaskSubmissionUrl] = useState('');
   const [subtaskInputs, setSubtaskInputs] = useState<string[]>(['']);
+
+  // Exam Form State
+  const [examTitle, setExamTitle] = useState('');
+  const [examCourseId, setExamCourseId] = useState(state.courses[0]?.id || '');
+  const [examCategory, setExamCategory] = useState<ExamCategory>('mtt');
+  const [examType, setExamType] = useState<ExamType>('theory');
+  const [examDate, setExamDate] = useState(new Date().toISOString().split('T')[0]);
+  const [examStartTime, setExamStartTime] = useState('09:00');
+  const [examEndTime, setExamEndTime] = useState('12:00');
+  const [examRoomOrLab, setExamRoomOrLab] = useState('');
+  const [examSeatNumber, setExamSeatNumber] = useState('');
+  const [examSession, setExamSession] = useState<'morning' | 'afternoon'>('morning');
+  const [examMaxMarks, setExamMaxMarks] = useState<number>(100);
 
   // Course Form State
   const [courseCode, setCourseCode] = useState('');
@@ -185,6 +204,7 @@ export function AddModal({
       priority: taskPriority,
       status: 'todo',
       category: taskCategory,
+      submissionUrl: taskSubmissionUrl.trim() || undefined,
       subtasks: validSubtasks.length > 0 ? validSubtasks : undefined,
     });
     onClose();
@@ -211,7 +231,31 @@ export function AddModal({
       cabinRoom: courseCabinRoom.trim() || undefined,
       totalClasses: totalHeld,
       attendedClasses: attended,
+      baselineClassesHeld: totalHeld,
+      baselineAttendedClasses: attended,
     });
+    onClose();
+  };
+
+  const handleExamSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!examTitle.trim()) return;
+
+    if (onAddExam) {
+      onAddExam({
+        title: examTitle.trim(),
+        courseId: examCourseId || undefined,
+        examCategory,
+        examType,
+        examDate,
+        startTime: examStartTime,
+        endTime: examEndTime,
+        roomOrLab: examRoomOrLab.trim() || undefined,
+        seatNumber: examSeatNumber.trim() || undefined,
+        session: examSession,
+        maxMarks: examMaxMarks || 100,
+      });
+    }
     onClose();
   };
 
@@ -235,22 +279,25 @@ export function AddModal({
         {/* Modal Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-white shadow-md"
-            style={{ backgroundColor: theme.accent }}
+            style={{ backgroundColor: type === 'exam' ? '#f43f5e' : theme.accent }}
           >
             {type === 'slot' && <Calendar className="w-5 h-5" />}
             {type === 'task' && <CheckSquare className="w-5 h-5" />}
             {type === 'course' && <BookOpen className="w-5 h-5" />}
+            {type === 'exam' && <Flame className="w-5 h-5" />}
           </div>
           <div>
             <h2 className="text-xl font-bold" style={{ color: theme.textPrimary }}>
               {type === 'slot' && (initialSlot ? 'Edit Timetable Class Slot' : 'Add Timetable Class Slot')}
-              {type === 'task' && 'Add Task, Assignment or Exam'}
+              {type === 'task' && 'Add Assignment or Milestone'}
               {type === 'course' && 'Register New College Course / Subject'}
+              {type === 'exam' && 'Schedule Exam / Evaluation Date'}
             </h2>
             <p className="text-xs text-slate-400">
               {type === 'slot' && (initialSlot ? 'Modify this lecture, lab, or tutorial period.' : 'Schedule a recurring lecture, lab, or tutorial period.')}
-              {type === 'task' && 'Track deliverables, upcoming tests, or study milestones.'}
+              {type === 'task' && 'Track deliverables, homework, or study milestones.'}
               {type === 'course' && 'Register a new subject with attendance targets and color.'}
+              {type === 'exam' && 'Add MTT, ETT, CA, Quiz, Viva, or Backlog exam with syllabus tracking.'}
             </p>
           </div>
         </div>
@@ -593,10 +640,24 @@ export function AddModal({
               </label>
               <textarea
                 rows={2}
-                placeholder="Details, submission links, guidelines..."
+                placeholder="Details, assignment guidelines..."
                 value={taskDesc}
                 onChange={(e) => setTaskDesc(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />
+                LMS Submission Link (Optional)
+              </label>
+              <input
+                type="url"
+                placeholder="https://classroom.google.com/... or Canvas / Moodle link"
+                value={taskSubmissionUrl}
+                onChange={(e) => setTaskSubmissionUrl(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 text-xs focus:outline-none"
               />
             </div>
 
@@ -925,6 +986,193 @@ export function AddModal({
                 style={{ backgroundColor: theme.accent }}
               >
                 Register Course
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* EXAM FORM */}
+        {type === 'exam' && (
+          <form onSubmit={handleExamSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Exam Title *
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Mid-Term Theory Exam or Lab Viva"
+                value={examTitle}
+                onChange={(e) => setExamTitle(e.target.value)}
+                required
+                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Assessment Category
+                </label>
+                <select
+                  value={examCategory}
+                  onChange={(e) => setExamCategory(e.target.value as ExamCategory)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+                >
+                  <option value="mtt" className="bg-slate-900">MTT (Mid-Term Test / Mid-Sem)</option>
+                  <option value="ett" className="bg-slate-900">ETT (End-Term Final Exam)</option>
+                  <option value="ca" className="bg-slate-900">CA / Class Test / Continuous</option>
+                  <option value="viva" className="bg-slate-900">Lab Viva / Practical Defense</option>
+                  <option value="quiz" className="bg-slate-900">Quiz / Surprise Test</option>
+                  <option value="project" className="bg-slate-900">Project Review / Jury / Capstone</option>
+                  <option value="backlog" className="bg-slate-900">Backlog / Supplementary / Re-sit</option>
+                  <option value="other" className="bg-slate-900">Other Assessment</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Format / Delivery
+                </label>
+                <select
+                  value={examType}
+                  onChange={(e) => setExamType(e.target.value as ExamType)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+                >
+                  <option value="theory" className="bg-slate-900">Theory (Written Exam)</option>
+                  <option value="practical" className="bg-slate-900">Practical (Workbench / Lab)</option>
+                  <option value="hybrid" className="bg-slate-900">Hybrid (Theory + Lab)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Linked Subject / Course
+                </label>
+                <select
+                  value={examCourseId}
+                  onChange={(e) => setExamCourseId(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+                >
+                  <option value="" className="bg-slate-900">General / Not Course Specific</option>
+                  {state.courses.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-slate-900">
+                      {c.code}: {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Exam Date *
+                </label>
+                <input
+                  type="date"
+                  value={examDate}
+                  onChange={(e) => setExamDate(e.target.value)}
+                  required
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Start Time
+                </label>
+                <input
+                  type="time"
+                  value={examStartTime}
+                  onChange={(e) => setExamStartTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  End Time
+                </label>
+                <input
+                  type="time"
+                  value={examEndTime}
+                  onChange={(e) => setExamEndTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Session
+                </label>
+                <select
+                  value={examSession}
+                  onChange={(e) => setExamSession(e.target.value as 'morning' | 'afternoon')}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                >
+                  <option value="morning" className="bg-slate-900">Morning (FN)</option>
+                  <option value="afternoon" className="bg-slate-900">Afternoon (AN)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Exam Hall / Lab Room
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Hall 304, Computer Lab 2"
+                  value={examRoomOrLab}
+                  onChange={(e) => setExamRoomOrLab(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Seat / Desk Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Desk B-14, Row 3"
+                  value={examSeatNumber}
+                  onChange={(e) => setExamSeatNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Max Marks (e.g. 50 or 100)
+              </label>
+              <input
+                type="number"
+                min="10"
+                max="200"
+                value={examMaxMarks}
+                onChange={(e) => setExamMaxMarks(parseInt(e.target.value, 10) || 100)}
+                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg bg-rose-600 hover:bg-rose-500 transition-transform hover:scale-105"
+              >
+                Schedule Exam
               </button>
             </div>
           </form>

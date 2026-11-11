@@ -1,4 +1,4 @@
-import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam, AcademicHoliday } from '../types';
+import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam, AcademicHoliday, ScheduleOverride } from '../types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'academiasync_auth_token';
@@ -585,6 +585,54 @@ export async function apiDeleteHoliday(holidayId: string, userId: string = 'loca
   const data = getLocalStudentData(userId);
   if (data.holidays) {
     data.holidays = data.holidays.filter((h) => h.id !== holidayId);
+    saveLocalStudentData(userId, data);
+  }
+}
+
+export async function apiAddScheduleOverride(override: Omit<ScheduleOverride, 'id' | 'createdAt'>): Promise<ScheduleOverride> {
+  try {
+    const res = await fetch(`${API_BASE}/schedule-overrides`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(override),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const userId = override.userId || 'local_user';
+  const data = getLocalStudentData(userId);
+  if (!data.scheduleOverrides) data.scheduleOverrides = [];
+  const existingIdx = data.scheduleOverrides.findIndex((o) => o.date === override.date);
+  const newOverride: ScheduleOverride = {
+    ...override,
+    id: existingIdx >= 0 ? data.scheduleOverrides[existingIdx].id : `ovr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    createdAt: new Date().toISOString(),
+  };
+  if (existingIdx >= 0) {
+    data.scheduleOverrides[existingIdx] = newOverride;
+  } else {
+    data.scheduleOverrides.push(newOverride);
+  }
+  saveLocalStudentData(userId, data);
+  return newOverride;
+}
+
+export async function apiDeleteScheduleOverride(overrideId: string, userId: string = 'local_user'): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/schedule-overrides/${overrideId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return;
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  if (data.scheduleOverrides) {
+    data.scheduleOverrides = data.scheduleOverrides.filter((o) => o.id !== overrideId);
     saveLocalStudentData(userId, data);
   }
 }

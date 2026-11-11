@@ -8,7 +8,8 @@ import {
   ThemeKey, 
   AttendanceStatus,
   Exam,
-  AcademicHoliday
+  AcademicHoliday,
+  ScheduleOverride
 } from './types';
 import { 
   apiFetchStudentData, 
@@ -26,6 +27,8 @@ import {
   apiDeleteExam,
   apiAddHoliday,
   apiDeleteHoliday,
+  apiAddScheduleOverride,
+  apiDeleteScheduleOverride,
   apiLogAttendance, 
   apiUndoAttendance,
   apiDeleteAttendanceRecord,
@@ -81,7 +84,7 @@ export function App() {
   });
   
   // Modals state
-  const [addModalType, setAddModalType] = useState<'slot' | 'task' | 'course' | null>(null);
+  const [addModalType, setAddModalType] = useState<'slot' | 'task' | 'course' | 'exam' | null>(null);
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -273,6 +276,40 @@ export function App() {
     } catch (err) {
       console.error('Error removing holiday:', err);
       showToast('Failed to remove holiday.', 'error');
+    }
+  };
+
+  const handleAddScheduleOverride = async (override: Omit<ScheduleOverride, 'id' | 'createdAt'>) => {
+    if (!currentUser) return;
+    try {
+      const created = await apiAddScheduleOverride({ ...override, userId: currentUser.id });
+      setState((prev) => {
+        const list = prev.scheduleOverrides || [];
+        const filtered = list.filter((o) => o.date !== created.date);
+        return {
+          ...prev,
+          scheduleOverrides: [...filtered, created],
+        };
+      });
+      showToast(`Applied day swap: ${created.date} follows ${created.runDaySchedule} timetable`, 'success');
+    } catch (err) {
+      console.error('Error applying schedule override:', err);
+      showToast('Failed to apply schedule override.', 'error');
+    }
+  };
+
+  const handleDeleteScheduleOverride = async (overrideId: string) => {
+    if (!currentUser) return;
+    try {
+      await apiDeleteScheduleOverride(overrideId, currentUser.id);
+      setState((prev) => ({
+        ...prev,
+        scheduleOverrides: (prev.scheduleOverrides || []).filter((o) => o.id !== overrideId),
+      }));
+      showToast('Removed day order override.', 'info');
+    } catch (err) {
+      console.error('Error deleting schedule override:', err);
+      showToast('Failed to remove override.', 'error');
     }
   };
 
@@ -837,10 +874,13 @@ export function App() {
                     </button>
                   </div>
                   <TimetableGrid
+                    user={currentUser}
                     state={viewState}
                     onOpenAddSlot={() => setAddModalType('slot')}
                     onOpenAddCourse={() => setAddModalType('course')}
                     onOpenHolidays={() => setShowHolidayModal(true)}
+                    onAddScheduleOverride={handleAddScheduleOverride}
+                    onDeleteScheduleOverride={handleDeleteScheduleOverride}
                     onEditSlot={(slot) => setEditingSlot(slot)}
                     onDeleteSlot={handleDeleteSlot}
                     onUpdateCourse={handleUpdateCourse}
@@ -901,6 +941,7 @@ export function App() {
               )}
             </div>
             <TimetableGrid
+              user={currentUser}
               state={viewState}
               onOpenAddSlot={() => {
                 if (isViewingHistorical) {
@@ -924,6 +965,8 @@ export function App() {
                 setShowPdfImportModal(true);
               }}
               onOpenHolidays={() => setShowHolidayModal(true)}
+              onAddScheduleOverride={handleAddScheduleOverride}
+              onDeleteScheduleOverride={handleDeleteScheduleOverride}
               onEditSlot={(slot) => {
                 if (isViewingHistorical) {
                   showToast(`Semester ${currentViewSemesterNumber} records are preserved (Read-Only).`, 'info');
@@ -1030,6 +1073,7 @@ export function App() {
           onUpdateSlot={handleUpdateSlot}
           onAddTask={handleAddTask}
           onAddCourse={handleAddCourse}
+          onAddExam={handleAddExam}
         />
       )}
 

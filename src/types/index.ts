@@ -15,6 +15,7 @@ export interface AcademicSemester {
   finalAttendancePct?: number;
   creditsEarned: number;
   sgpa?: number;
+  marksheetRef?: string; // Link to official marksheet / grade card PDF or image
   notes?: string;
   createdAt?: string;
 }
@@ -39,6 +40,7 @@ export interface UserAccount {
   collegeMinAttendance: number; // e.g. 75% set by University
   personalGoalAttendance: number; // e.g. 90% custom student target (>= collegeMinAttendance)
   targetAttendance?: number; // legacy alias for compatibility
+  excusedPolicy?: 'exemption' | 'credit'; // 'exemption' (default): excludes from total classes; 'credit': counts as attended
   theme?: ThemeKey;
   staySignedIn?: boolean;
   storageMode?: 'sqlite' | 'local' | 'postgres';
@@ -108,6 +110,7 @@ export interface Task {
   priority: TaskPriority;
   status: TaskStatus;
   category: TaskCategory;
+  submissionUrl?: string; // Link to LMS portal (Google Classroom, Canvas, Moodle, Teams)
   subtasks?: SubTask[];
   semesterNumber?: number;
   createdAt?: string;
@@ -128,7 +131,7 @@ export interface AttendanceRecord {
   semesterNumber?: number;
 }
 
-export type ExamCategory = 'mtt' | 'ett' | 'ca' | 'viva' | 'other';
+export type ExamCategory = 'mtt' | 'ett' | 'ca' | 'viva' | 'quiz' | 'project' | 'backlog' | 'other';
 export type ExamType = 'theory' | 'practical' | 'hybrid';
 
 export interface SyllabusUnit {
@@ -170,6 +173,15 @@ export interface AcademicHoliday {
   createdAt?: string;
 }
 
+export interface ScheduleOverride {
+  id: string;
+  userId?: string;
+  date: string; // YYYY-MM-DD
+  runDaySchedule: DayOfWeek; // e.g. "Monday"
+  reason?: string; // e.g. "Follow Monday Timetable on Saturday"
+  createdAt?: string;
+}
+
 export type ThemeKey = 
   | 'dark-slate' 
   | 'cyberpunk' 
@@ -186,6 +198,7 @@ export interface StudentData {
   semesters?: AcademicSemester[];
   exams?: Exam[];
   holidays?: AcademicHoliday[];
+  scheduleOverrides?: ScheduleOverride[];
   activeSemesterNumber?: number;
   theme: ThemeKey;
   activeView: 'dashboard' | 'timetable' | 'tasks' | 'attendance' | 'exams';

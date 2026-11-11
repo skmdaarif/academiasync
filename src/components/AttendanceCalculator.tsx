@@ -19,7 +19,10 @@ import {
   X,
   Edit3,
   BookOpen,
-  Calendar
+  Calendar,
+  FlaskConical,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -65,6 +68,8 @@ export function AttendanceCalculator({
   const [customGoalInput, setCustomGoalInput] = useState<number>(personalGoal);
   const [goalSavedFeedback, setGoalSavedFeedback] = useState(false);
   const [goalError, setGoalError] = useState('');
+  const [simulatingCourseId, setSimulatingCourseId] = useState<string | null>(null);
+  const [simulatedBunks, setSimulatedBunks] = useState<Record<string, number>>({});
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
@@ -477,6 +482,85 @@ export function AttendanceCalculator({
                     {analysis.statusText}
                   </div>
                 </div>
+
+                {/* Interactive What-If Bunk Simulator */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setSimulatingCourseId(simulatingCourseId === course.id ? null : course.id)}
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-indigo-300 border border-white/5 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FlaskConical className="w-3.5 h-3.5 text-indigo-400" />
+                      What-If Bunk Simulator
+                    </span>
+                    {simulatingCourseId === course.id ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                  </button>
+
+                  {simulatingCourseId === course.id && (() => {
+                    const bunkCount = simulatedBunks[course.id] || 0;
+                    const cTotal = (course.totalClasses || 0) + (course.baselineClassesHeld || 0);
+                    const cAttended = (course.attendedClasses || 0) + (course.baselineAttendedClasses || 0);
+                    const simTotal = cTotal + bunkCount;
+                    const simAttended = cAttended;
+                    const simPct = simTotal > 0 ? (simAttended / simTotal) * 100 : 100;
+                    const drop = Math.max(0, analysis.percentage - simPct);
+                    const targetRatio = collegeMin / 100;
+                    const recoveryNeeded = Math.max(0, Math.ceil((targetRatio * simTotal - simAttended) / (1 - targetRatio)));
+
+                    return (
+                      <div className="mt-2 p-3 rounded-2xl bg-indigo-950/40 border border-indigo-500/20 space-y-2 text-xs">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">Simulate Next Bunks:</span>
+                          <span className="font-bold text-amber-300 font-mono">
+                            {bunkCount} Class{bunkCount === 1 ? '' : 'es'}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="10"
+                          step="1"
+                          value={bunkCount}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10) || 0;
+                            setSimulatedBunks({ ...simulatedBunks, [course.id]: val });
+                          }}
+                          className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-400"
+                        />
+                        {bunkCount > 0 ? (
+                          <div className="space-y-1 pt-1 text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Resulting Attendance:</span>
+                              <span className={`font-bold ${simPct >= collegeMin ? 'text-emerald-300' : 'text-rose-400'}`}>
+                                {simPct.toFixed(1)}% <span className="text-[10px] text-rose-400">(-{drop.toFixed(1)}%)</span>
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-300 leading-tight">
+                              {simPct >= collegeMin ? (
+                                <span className="text-emerald-400">
+                                  ✓ Still within safe margin ({simPct.toFixed(1)}% ≥ {collegeMin}%).
+                                </span>
+                              ) : (
+                                <span className="text-rose-300">
+                                  ⚠️ Drops below {collegeMin}%! Requires attending <strong>{recoveryNeeded}</strong> consecutive class{recoveryNeeded === 1 ? '' : 'es'} to recover.
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 italic">
+                            Slide right to test how future bunks impact your percentage.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
 
               {/* Quick Actions Footer */}
@@ -507,7 +591,7 @@ export function AttendanceCalculator({
                     className="p-1.5 rounded-lg text-xs font-bold text-slate-300 bg-slate-800/80 border border-slate-600/30 hover:bg-slate-700/80 transition-colors flex items-center gap-1"
                     title="Class Not Conducted / Holiday / Half-Day (0 safe bunk penalty)"
                   >
-                    ⚪ Cancelled
+                    ⚪ Not Conducted
                   </button>
 
                   <button

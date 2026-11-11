@@ -17,7 +17,9 @@ import {
   Layers, 
   Check,
   Edit3,
-  X
+  X,
+  Link2,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -723,6 +725,23 @@ function TaskCard({
         <p className="text-xs mt-1.5 line-clamp-2" style={{ color: theme.textSecondary }}>
           {task.description}
         </p>
+      )}
+
+      {/* LMS Submission Link */}
+      {task.submissionUrl && (
+        <div className="mt-2.5">
+          <a
+            href={task.submissionUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-all shadow-sm"
+          >
+            <Link2 className="w-3 h-3 text-indigo-400" />
+            <span>Submit on LMS</span>
+            <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+          </a>
+        </div>
       )}
 
       {/* Subtasks checklist if present */}

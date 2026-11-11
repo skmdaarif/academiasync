@@ -182,6 +182,17 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_holidays_user ON academic_holidays(user_id);
+
+  CREATE TABLE IF NOT EXISTS schedule_overrides (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    run_day_schedule TEXT NOT NULL,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_overrides_user ON schedule_overrides(user_id);
+  CREATE INDEX IF NOT EXISTS idx_overrides_date ON schedule_overrides(date);
 `);
 
 // Safe Schema Column Migrations
@@ -201,6 +212,8 @@ ensureColumn('users', 'admission_type', "TEXT DEFAULT 'fresh'");
 ensureColumn('users', 'active_semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('users', 'semester_start_date', 'TEXT');
 ensureColumn('users', 'student_batch', 'TEXT');
+ensureColumn('users', 'excused_policy', "TEXT DEFAULT 'exemption'");
+ensureColumn('academic_semesters', 'marksheet_ref', 'TEXT');
 ensureColumn('courses', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('courses', 'baseline_classes_held', 'INTEGER DEFAULT 0');
 ensureColumn('courses', 'baseline_attended_classes', 'INTEGER DEFAULT 0');
@@ -215,6 +228,7 @@ ensureColumn('time_slots', 'specific_date', 'TEXT');
 ensureColumn('time_slots', 'batch', 'TEXT');
 ensureColumn('time_slots', 'duration_multiplier', 'INTEGER DEFAULT 1');
 ensureColumn('tasks', 'semester_number', 'INTEGER DEFAULT 1');
+ensureColumn('tasks', 'submission_url', 'TEXT');
 ensureColumn('attendance_records', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('attendance_records', 'document_ref', 'TEXT');
 ensureColumn('attendance_records', 'periods_count', 'INTEGER DEFAULT 1');
@@ -319,7 +333,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
   const tasksRaw = db.prepare(`
     SELECT id, course_id as courseId, title, description,
            due_date as dueDate, due_time as dueTime, priority, status,
-           category, created_at as createdAt,
+           category, submission_url as submissionUrl, created_at as createdAt,
            COALESCE(semester_number, 1) as semesterNumber
     FROM tasks
     WHERE user_id = ?
@@ -364,7 +378,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     SELECT id, user_id as userId, semester_number as semesterNumber,
            title, status, start_date as startDate, end_date as endDate,
            final_attendance_pct as finalAttendancePct, credits_earned as creditsEarned,
-           sgpa, notes, created_at as createdAt
+           sgpa, marksheet_ref as marksheetRef, notes, created_at as createdAt
     FROM academic_semesters
     WHERE user_id = ?
     ORDER BY semester_number ASC
@@ -424,6 +438,14 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     ORDER BY start_date ASC
   `).all(userId).map(h => ({ ...h, isOffDay: Boolean(h.isOffDay) }));
 
+  const scheduleOverrides = db.prepare(`
+    SELECT id, user_id as userId, date, run_day_schedule as runDaySchedule,
+           reason, created_at as createdAt
+    FROM schedule_overrides
+    WHERE user_id = ?
+    ORDER BY date ASC
+  `).all(userId);
+
   return {
     courses,
     timeSlots,
@@ -432,6 +454,7 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
     semesters,
     exams,
     holidays,
+    scheduleOverrides,
     activeSemesterNumber,
     theme: defaultTheme,
     activeView: 'dashboard',
@@ -454,6 +477,9 @@ app.post('/api/auth/register', async (req, res) => {
       branch,
       degreeType,
       semester,
+      semesterStartDate,
+      studentBatch,
+      excusedPolicy,
       collegeMinAttendance,
       personalGoalAttendance,
       admissionType,
@@ -506,8 +532,9 @@ app.post('/api/auth/register', async (req, res) => {
           id, full_name, email, password_hash, country, college_name,
           branch, degree_type, semester, total_semesters,
           college_min_attendance, personal_attendance_goal, target_attendance_percentage,
-          theme_preference, admission_type, active_semester_number
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          theme_preference, admission_type, active_semester_number,
+          semester_start_date, student_batch, excused_policy
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         userId,
         name.trim(),
@@ -524,7 +551,10 @@ app.post('/api/auth/register', async (req, res) => {
         minAtt,
         'dark-slate',
         finalAdmissionType,
-        activeSemNumber
+        activeSemNumber,
+        semesterStartDate || null,
+        studentBatch || null,
+        excusedPolicy || 'exemption'
       );
 
       // Create Active Semester record
@@ -575,6 +605,9 @@ app.post('/api/auth/register', async (req, res) => {
       totalSemesters: 8,
       admissionType: finalAdmissionType,
       activeSemesterNumber: activeSemNumber,
+      semesterStartDate: semesterStartDate || undefined,
+      studentBatch: studentBatch || undefined,
+      excusedPolicy: excusedPolicy || 'exemption',
       collegeMinAttendance: minAtt,
       personalGoalAttendance: persGoal,
       targetAttendance: minAtt,
@@ -608,7 +641,8 @@ app.post('/api/auth/login', async (req, res) => {
       SELECT id, full_name, email, password_hash, country, college_name,
              branch, degree_type, semester, total_semesters,
              college_min_attendance, personal_attendance_goal, target_attendance_percentage,
-             theme_preference, semester_start_date, admission_type, active_semester_number
+             theme_preference, semester_start_date, admission_type, active_semester_number,
+             student_batch, excused_policy
       FROM users WHERE LOWER(email) = ?
     `).get(normalizedEmail);
 
@@ -638,6 +672,8 @@ app.post('/api/auth/login', async (req, res) => {
       admissionType: userRow.admission_type || 'fresh',
       activeSemesterNumber: activeSemNumber,
       semesterStartDate: userRow.semester_start_date || undefined,
+      studentBatch: userRow.student_batch || undefined,
+      excusedPolicy: userRow.excused_policy || 'exemption',
       collegeMinAttendance: collegeMin,
       personalGoalAttendance: personalGoal,
       targetAttendance: collegeMin,
@@ -694,7 +730,7 @@ app.get('/api/semesters/:userId', requireAuth, (req, res) => {
       SELECT id, user_id as userId, semester_number as semesterNumber,
              title, status, start_date as startDate, end_date as endDate,
              final_attendance_pct as finalAttendancePct, credits_earned as creditsEarned,
-             sgpa, notes, created_at as createdAt
+             sgpa, marksheet_ref as marksheetRef, notes, created_at as createdAt
       FROM academic_semesters
       WHERE user_id = ?
       ORDER BY semester_number ASC
@@ -730,6 +766,7 @@ app.post('/api/semesters/backfill', requireAuth, (req, res) => {
                 final_attendance_pct = ?,
                 credits_earned = ?,
                 sgpa = ?,
+                marksheet_ref = COALESCE(?, marksheet_ref),
                 notes = ?,
                 status = COALESCE(?, status)
             WHERE id = ?
@@ -738,6 +775,7 @@ app.post('/api/semesters/backfill', requireAuth, (req, res) => {
             sem.finalAttendancePct !== undefined ? sem.finalAttendancePct : null,
             sem.creditsEarned !== undefined ? sem.creditsEarned : 0,
             sem.sgpa !== undefined ? sem.sgpa : null,
+            sem.marksheetRef !== undefined ? sem.marksheetRef : null,
             sem.notes !== undefined ? sem.notes : null,
             sem.status || 'backfilled',
             existing.id
@@ -745,8 +783,8 @@ app.post('/api/semesters/backfill', requireAuth, (req, res) => {
         } else {
           db.prepare(`
             INSERT INTO academic_semesters (
-              id, user_id, semester_number, title, status, final_attendance_pct, credits_earned, sgpa, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, user_id, semester_number, title, status, final_attendance_pct, credits_earned, sgpa, marksheet_ref, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             crypto.randomUUID(),
             effectiveUserId,
@@ -756,6 +794,7 @@ app.post('/api/semesters/backfill', requireAuth, (req, res) => {
             sem.finalAttendancePct !== undefined ? sem.finalAttendancePct : null,
             sem.creditsEarned !== undefined ? sem.creditsEarned : 0,
             sem.sgpa !== undefined ? sem.sgpa : null,
+            sem.marksheetRef || null,
             sem.notes || null
           );
         }
@@ -768,7 +807,7 @@ app.post('/api/semesters/backfill', requireAuth, (req, res) => {
       SELECT id, user_id as userId, semester_number as semesterNumber,
              title, status, start_date as startDate, end_date as endDate,
              final_attendance_pct as finalAttendancePct, credits_earned as creditsEarned,
-             sgpa, notes, created_at as createdAt
+             sgpa, marksheet_ref as marksheetRef, notes, created_at as createdAt
       FROM academic_semesters
       WHERE user_id = ?
       ORDER BY semester_number ASC
@@ -1216,7 +1255,7 @@ app.delete('/api/slots/:id', requireAuth, (req, res) => {
 // Add Task (Atomic Transaction)
 app.post('/api/tasks', requireAuth, (req, res) => {
   try {
-    const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, subtasks, semesterNumber } = req.body;
+    const { userId, courseId, title, description, dueDate, dueTime, priority, status, category, submissionUrl, subtasks, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
     const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
     const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
@@ -1226,8 +1265,8 @@ app.post('/api/tasks', requireAuth, (req, res) => {
       db.prepare(`
         INSERT INTO tasks (
           id, user_id, course_id, title, description, due_date, due_time,
-          priority, status, category, semester_number
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          priority, status, category, submission_url, semester_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         taskId,
         effectiveUserId,
@@ -1239,6 +1278,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
         priority || 'medium',
         status || 'todo',
         category || 'assignment',
+        submissionUrl || null,
         semNumber
       );
 
@@ -1263,7 +1303,8 @@ app.post('/api/tasks', requireAuth, (req, res) => {
     const createdTask = db.prepare(`
       SELECT id, course_id as courseId, title, description,
              due_date as dueDate, due_time as dueTime, priority, status,
-             category, created_at as createdAt, COALESCE(semester_number, 1) as semesterNumber
+             category, submission_url as submissionUrl, created_at as createdAt,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM tasks WHERE id = ?
     `).get(taskId);
 
@@ -1278,7 +1319,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
 app.put('/api/tasks/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, dueDate, dueTime, priority, status, category, subtasks } = req.body;
+    const { title, description, dueDate, dueTime, priority, status, category, submissionUrl, subtasks } = req.body;
 
     const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.user.id);
     if (!existing) {
@@ -1294,7 +1335,8 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
             due_time = COALESCE(?, due_time),
             priority = COALESCE(?, priority),
             status = COALESCE(?, status),
-            category = COALESCE(?, category)
+            category = COALESCE(?, category),
+            submission_url = ?
         WHERE id = ? AND user_id = ?
       `).run(
         title || null,
@@ -1304,6 +1346,7 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
         priority || null,
         status || null,
         category || null,
+        submissionUrl !== undefined ? submissionUrl : existing.submission_url,
         id,
         req.user.id
       );
@@ -1327,7 +1370,8 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
     const updatedTask = db.prepare(`
       SELECT id, course_id as courseId, title, description,
              due_date as dueDate, due_time as dueTime, priority, status,
-             category, created_at as createdAt
+             category, submission_url as submissionUrl, created_at as createdAt,
+             COALESCE(semester_number, 1) as semesterNumber
       FROM tasks WHERE id = ?
     `).get(id);
 
@@ -1360,15 +1404,16 @@ app.post('/api/attendance', requireAuth, (req, res) => {
   try {
     const { userId, courseId, status, date, note, documentRef, durationMultiplier, periodsCount, semesterNumber } = req.body;
     const effectiveUserId = req.user.id || userId;
-    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(effectiveUserId);
+    const userRow = db.prepare('SELECT active_semester_number, excused_policy FROM users WHERE id = ?').get(effectiveUserId);
     const semNumber = Number(semesterNumber) || userRow?.active_semester_number || 1;
+    const isExcusedCredit = userRow?.excused_policy === 'credit' && status === 'excused';
 
     const recordId = crypto.randomUUID();
     const logDate = date || new Date().toISOString().split('T')[0];
     const multiplier = Math.max(1, parseInt(durationMultiplier || periodsCount, 10) || 1);
 
-    const isPresent = status === 'present';
-    const isCounted = status === 'present' || status === 'absent';
+    const isPresent = status === 'present' || isExcusedCredit;
+    const isCounted = status === 'present' || status === 'absent' || isExcusedCredit;
     const heldIncrement = isCounted ? multiplier : 0;
     const attendedIncrement = isPresent ? multiplier : 0;
 
@@ -1421,9 +1466,12 @@ app.delete('/api/attendance/:id', requireAuth, (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Access denied.' });
     }
 
+    const userRow = db.prepare('SELECT excused_policy FROM users WHERE id = ?').get(rec.user_id);
+    const isExcusedCredit = userRow?.excused_policy === 'credit' && rec.status === 'excused';
+
     const mult = rec.periods_count || 1;
-    const isPresent = rec.status === 'present';
-    const isCounted = rec.status === 'present' || rec.status === 'absent';
+    const isPresent = rec.status === 'present' || isExcusedCredit;
+    const isCounted = rec.status === 'present' || rec.status === 'absent' || isExcusedCredit;
     const heldDecrement = isCounted ? mult : 0;
     const attendedDecrement = isPresent ? mult : 0;
 
@@ -1469,17 +1517,23 @@ app.post('/api/attendance/undo', requireAuth, (req, res) => {
       ORDER BY created_at DESC LIMIT 1
     `).get(effectiveUserId, courseId);
 
+    const userRow = db.prepare('SELECT excused_policy FROM users WHERE id = ?').get(effectiveUserId);
+    const isExcusedCredit = userRow?.excused_policy === 'credit' && latestRec?.status === 'excused';
+
     let wasPresent = false;
     let wasCounted = false;
     let deletedRecordId = null;
     let mult = 1;
 
+    if (latestRec) {
+      mult = latestRec.periods_count || 1;
+      wasPresent = latestRec.status === 'present' || isExcusedCredit;
+      wasCounted = latestRec.status === 'present' || latestRec.status === 'absent' || isExcusedCredit;
+      deletedRecordId = latestRec.id;
+    }
+
     const undoTx = db.transaction(() => {
       if (latestRec) {
-        wasPresent = latestRec.status === 'present';
-        wasCounted = latestRec.status === 'present' || latestRec.status === 'absent';
-        deletedRecordId = latestRec.id;
-        mult = latestRec.periods_count || 1;
         db.prepare('DELETE FROM attendance_records WHERE id = ?').run(latestRec.id);
       } else {
         const currCourse = db.prepare('SELECT total_classes_held, attended_classes FROM courses WHERE id = ? AND user_id = ?').get(courseId, effectiveUserId);
@@ -1826,6 +1880,56 @@ app.delete('/api/holidays/:id', requireAuth, (req, res) => {
   }
 });
 
+// Add Schedule Day Override (e.g. Run Monday Timetable on Saturday)
+app.post('/api/schedule-overrides', requireAuth, (req, res) => {
+  try {
+    const { userId, date, runDaySchedule, reason } = req.body;
+    const effectiveUserId = req.user.id || userId;
+    const overrideId = crypto.randomUUID();
+
+    // Check if an override for this date already exists; if so, replace it
+    const existing = db.prepare('SELECT id FROM schedule_overrides WHERE user_id = ? AND date = ?').get(effectiveUserId, date);
+    if (existing) {
+      db.prepare(`
+        UPDATE schedule_overrides
+        SET run_day_schedule = ?, reason = ?
+        WHERE id = ?
+      `).run(runDaySchedule, reason || null, existing.id);
+
+      const updated = db.prepare(`
+        SELECT id, user_id as userId, date, run_day_schedule as runDaySchedule, reason, created_at as createdAt
+        FROM schedule_overrides WHERE id = ?
+      `).get(existing.id);
+      return res.json(updated);
+    }
+
+    db.prepare(`
+      INSERT INTO schedule_overrides (id, user_id, date, run_day_schedule, reason)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(overrideId, effectiveUserId, date, runDaySchedule, reason || null);
+
+    const created = db.prepare(`
+      SELECT id, user_id as userId, date, run_day_schedule as runDaySchedule, reason, created_at as createdAt
+      FROM schedule_overrides WHERE id = ?
+    `).get(overrideId);
+
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Schedule Override
+app.delete('/api/schedule-overrides/:id', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare('DELETE FROM schedule_overrides WHERE id = ? AND user_id = ?').run(id, req.user.id);
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Update User Profile
 app.put('/api/users/profile', requireAuth, (req, res) => {
   try {
@@ -1837,6 +1941,8 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
       degreeType,
       semester,
       semesterStartDate,
+      studentBatch,
+      excusedPolicy,
       collegeMinAttendance,
       personalGoalAttendance,
       theme,
@@ -1865,6 +1971,8 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
           degree_type = COALESCE(?, degree_type),
           semester = COALESCE(?, semester),
           semester_start_date = ?,
+          student_batch = ?,
+          excused_policy = COALESCE(?, excused_policy),
           college_min_attendance = COALESCE(?, college_min_attendance),
           personal_attendance_goal = COALESCE(?, personal_attendance_goal),
           target_attendance_percentage = COALESCE(?, target_attendance_percentage),
@@ -1877,6 +1985,8 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
       degreeType || null,
       semester || null,
       semesterStartDate !== undefined ? semesterStartDate : existing.semester_start_date,
+      studentBatch !== undefined ? studentBatch : existing.student_batch,
+      excusedPolicy || null,
       minAtt,
       persGoal,
       minAtt,
@@ -1887,7 +1997,8 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
     const updated = db.prepare(`
       SELECT id, full_name as name, email, country, college_name as collegeName,
              branch, degree_type as degreeType, semester, total_semesters as totalSemesters,
-             semester_start_date as semesterStartDate, college_min_attendance as collegeMinAttendance,
+             semester_start_date as semesterStartDate, student_batch as studentBatch,
+             excused_policy as excusedPolicy, college_min_attendance as collegeMinAttendance,
              personal_attendance_goal as personalGoalAttendance, theme_preference as theme
       FROM users WHERE id = ?
     `).get(id);

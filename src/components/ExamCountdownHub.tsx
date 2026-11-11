@@ -72,6 +72,9 @@ const CATEGORY_LABELS: Record<ExamCategory, { label: string; desc: string }> = {
   ett: { label: 'ETT (End-Term)', desc: 'End-Term Finals & University Examinations' },
   ca: { label: 'CA / Class Test', desc: 'Continuous Assessments & Mini Tests' },
   viva: { label: 'Lab Viva / Oral', desc: 'Practical Vivas & Lab Evaluations' },
+  quiz: { label: 'Quiz / Test', desc: 'Surprise Tests & Weekly MCQs' },
+  project: { label: 'Project / Jury', desc: 'Capstone Milestones & Design Jury' },
+  backlog: { label: 'Backlog / Re-sit', desc: 'Supplementary & Improvement Exams' },
   other: { label: 'Other Exam', desc: 'Quiz, Entrance, or Certification' },
 };
 
@@ -308,7 +311,7 @@ export function ExamCountdownHub({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
         {/* Category Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-          {(['all', 'mtt', 'ett', 'ca', 'viva', 'other'] as const).map((cat) => (
+          {(['all', 'mtt', 'ett', 'ca', 'viva', 'quiz', 'project', 'backlog', 'other'] as const).map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveTab(cat)}
@@ -844,10 +847,13 @@ export function ExamCountdownHub({
                     onChange={(e) => setFormCategory(e.target.value as ExamCategory)}
                     className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
                   >
-                    <option value="mtt" className="bg-slate-900">MTT (Mid-Term)</option>
+                    <option value="mtt" className="bg-slate-900">MTT (Mid-Term Test)</option>
                     <option value="ett" className="bg-slate-900">ETT (End-Term Finals)</option>
                     <option value="ca" className="bg-slate-900">CA / Class Test</option>
                     <option value="viva" className="bg-slate-900">Lab Viva / Oral</option>
+                    <option value="quiz" className="bg-slate-900">Quiz / Surprise Test</option>
+                    <option value="project" className="bg-slate-900">Project Review / Jury</option>
+                    <option value="backlog" className="bg-slate-900">Backlog / Supplementary</option>
                     <option value="other" className="bg-slate-900">Other Exam</option>
                   </select>
                 </div>

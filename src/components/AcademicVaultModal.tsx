@@ -14,7 +14,8 @@ import {
   TrendingUp, 
   History,
   Save,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 
 interface AcademicVaultModalProps {
@@ -51,6 +52,7 @@ export function AcademicVaultModal({
   const [editAttendance, setEditAttendance] = useState<number>(80);
   const [editCredits, setEditCredits] = useState<number>(20);
   const [editSgpa, setEditSgpa] = useState<string>('');
+  const [editMarksheetRef, setEditMarksheetRef] = useState<string>('');
   const [editNotes, setEditNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [successToast, setSuccessToast] = useState(false);
@@ -95,6 +97,7 @@ export function AcademicVaultModal({
     setEditAttendance(sem.finalAttendancePct ?? 80);
     setEditCredits(sem.creditsEarned || 20);
     setEditSgpa(sem.sgpa !== undefined ? String(sem.sgpa) : '');
+    setEditMarksheetRef(sem.marksheetRef || '');
     setEditNotes(sem.notes || '');
   };
 
@@ -109,6 +112,7 @@ export function AcademicVaultModal({
             finalAttendancePct: Number(editAttendance) || 0,
             creditsEarned: Number(editCredits) || 0,
             sgpa: !isNaN(parsedSgpa) && parsedSgpa > 0 ? parsedSgpa : undefined,
+            marksheetRef: editMarksheetRef.trim() || undefined,
             notes: editNotes.trim() || undefined,
           };
         }
@@ -392,7 +396,14 @@ export function AcademicVaultModal({
                       </div>
                     </div>
 
-                    <div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="url"
+                        placeholder="Link to Grade Card / Marksheet (Drive/PDF)"
+                        value={editMarksheetRef}
+                        onChange={(e) => setEditMarksheetRef(e.target.value)}
+                        className="w-full px-2.5 py-1 text-xs rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-indigo-400"
+                      />
                       <input
                         type="text"
                         placeholder="Optional notes or remarks"
@@ -420,8 +431,8 @@ export function AcademicVaultModal({
                     <div className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
                         isActive 
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                          : 'bg-white/10 text-slate-300'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                        : 'bg-white/10 text-slate-300'
                       }`}>
                         S{sem.semesterNumber}
                       </div>
@@ -449,7 +460,20 @@ export function AcademicVaultModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                      {sem.marksheetRef && (
+                        <a
+                          href={sem.marksheetRef}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors flex items-center gap-1"
+                          title="Open official semester marksheet / grade card"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Marksheet</span>
+                        </a>
+                      )}
+
                       <button
                         onClick={() => {
                           onSelectSemesterForViewing(sem.semesterNumber);

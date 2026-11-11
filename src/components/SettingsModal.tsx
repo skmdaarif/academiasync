@@ -166,6 +166,19 @@ export function SettingsModal({
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Student Lab Batch / Section
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Batch B2 / Section 3"
+                value={formData.studentBatch || ''}
+                onChange={(e) => setFormData({ ...formData, studentBatch: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Semester Start Date
               </label>
               <input
@@ -223,6 +236,28 @@ export function SettingsModal({
                 Must be ≥ {formData.collegeMinAttendance || 75}% (Defaults to College Min)
               </span>
             </div>
+          </div>
+
+          {/* Excused / OD Attendance Credit Policy */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              On-Duty (OD) & Medical Leave Policy
+            </label>
+            <select
+              value={formData.excusedPolicy || 'exemption'}
+              onChange={(e) => setFormData({ ...formData, excusedPolicy: e.target.value as 'exemption' | 'credit' })}
+              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+            >
+              <option value="exemption" className="bg-slate-900">
+                Exemption Mode (Default) — Excused classes excluded from held total (0 penalty)
+              </option>
+              <option value="credit" className="bg-slate-900">
+                Full Credit Mode — Excused classes with approved certificate credited as attended (+1 held, +1 attended)
+              </option>
+            </select>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Configure according to your university regulations (e.g. SRM / Amity / Manipal vs VTU / Anna Univ).
+            </p>
           </div>
 
           {/* Courses List */}

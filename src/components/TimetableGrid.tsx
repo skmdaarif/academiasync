@@ -4,10 +4,12 @@ import {
   TimeSlot, 
   StudentData, 
   AttendanceStatus,
-  Course
+  Course,
+  ScheduleOverride,
+  UserAccount
 } from '../types';
 import { THEMES } from '../styles/themes';
-import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes, getSlotDurationMultiplier, isHolidayDate } from '../utils/timeUtils';
+import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes, getSlotDurationMultiplier, isHolidayDate, getEffectiveDayOfWeek } from '../utils/timeUtils';
 import { getStoredPreference, setStoredPreference } from '../services/platform';
 import { 
   Clock, 
@@ -27,15 +29,20 @@ import {
   Printer,
   CalendarDays,
   FileText,
-  Palmtree
+  Palmtree,
+  ArrowRightLeft,
+  AlertTriangle
 } from 'lucide-react';
 
 interface TimetableGridProps {
+  user?: UserAccount;
   state: StudentData;
   onOpenAddSlot: () => void;
   onOpenAddCourse: () => void;
   onOpenPdfImport?: () => void;
   onOpenHolidays?: () => void;
+  onAddScheduleOverride?: (override: Omit<ScheduleOverride, 'id' | 'createdAt'>) => void;
+  onDeleteScheduleOverride?: (overrideId: string) => void;
   onEditSlot: (slot: TimeSlot) => void;
   onDeleteSlot: (slotId: string) => void;
   onUpdateCourse?: (course: Course) => void;
@@ -56,23 +63,39 @@ const PRESET_COLORS = [
 ];
 
 export function TimetableGrid({
+  user,
   state,
   onOpenAddSlot,
   onOpenAddCourse,
   onOpenPdfImport,
   onOpenHolidays,
+  onAddScheduleOverride,
+  onDeleteScheduleOverride,
   onEditSlot,
   onDeleteSlot,
   onUpdateCourse,
   onDeleteCourse,
   onMarkAttendance,
 }: TimetableGridProps) {
-  const todayName = getTodayDayName();
+  const todayName = getTodayDayName(state.scheduleOverrides);
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(todayName);
   const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+
+  // Schedule Override State
+  const [showDaySwapModal, setShowDaySwapModal] = useState(false);
+  const [swapDate, setSwapDate] = useState(new Date().toISOString().split('T')[0]);
+  const [swapTargetDay, setSwapTargetDay] = useState<DayOfWeek>('Monday');
+  const [swapReason, setSwapReason] = useState('');
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isBeforeTermStart = user?.semesterStartDate && todayStr < user.semesterStartDate;
+  const daysUntilTermStart = user?.semesterStartDate
+    ? Math.ceil((new Date(user.semesterStartDate).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+  const activeTodayOverride = state.scheduleOverrides?.find((o) => o.date === todayStr);
 
   const [daysSpan, setDaysSpan] = useState<'5' | '6' | '7'>(() => {
     const saved = getStoredPreference('timetable_days_span', '');
@@ -310,6 +333,16 @@ export function TimetableGrid({
           )}
 
           <button
+            type="button"
+            onClick={() => setShowDaySwapModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 hover:text-white transition-colors"
+            title="Override Day Order (e.g. Run Monday Timetable on Saturday)"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5" />
+            <span>Day Swap</span>
+          </button>
+
+          <button
             onClick={onOpenAddCourse}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 hover:text-white hover:bg-white/10 transition-colors"
             title="Register New Subject"
@@ -331,6 +364,59 @@ export function TimetableGrid({
           </button>
         </div>
       </div>
+
+      {/* Classes Commencement Countdown Banner */}
+      {isBeforeTermStart && (
+        <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+              <CalendarDays className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                Classes Start in {daysUntilTermStart} Day{daysUntilTermStart === 1 ? '' : 's'}
+                <span className="text-[10px] font-mono font-normal px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300">
+                  {user?.semesterStartDate}
+                </span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                You can design, import, and configure your course timetable matrix ahead of Day 1.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Active Schedule Day Order Swap Banner */}
+      {activeTodayOverride && (
+        <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+              <ArrowRightLeft className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-emerald-300 flex items-center gap-2">
+                Active Day Order Swap: Following {activeTodayOverride.runDaySchedule}'s Timetable
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200">
+                  {activeTodayOverride.date}
+                </span>
+              </h4>
+              {activeTodayOverride.reason && (
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  Reason: {activeTodayOverride.reason}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowDaySwapModal(true)}
+            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 underline shrink-0"
+          >
+            Manage Swaps
+          </button>
+        </div>
+      )}
 
       {/* Quick Subject Chip Bar with Edit & Delete options */}
       {state.courses.length > 0 && (
@@ -559,7 +645,7 @@ export function TimetableGrid({
                               title="Class Not Conducted / Holiday / Half-Day (0 safe bunk penalty)"
                             >
                               <span>⚪</span>
-                              <span className="hidden sm:inline">Cancelled</span>
+                              <span className="hidden sm:inline">Not Conducted</span>
                             </button>
                           </>
                         );
@@ -957,6 +1043,142 @@ export function TimetableGrid({
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Day Order Swap Modal */}
+      {showDaySwapModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div 
+            className="w-full max-w-md rounded-3xl p-6 border shadow-2xl relative"
+            style={{
+              backgroundColor: theme.headerBg,
+              borderColor: theme.cardBorder,
+            }}
+          >
+            <button
+              onClick={() => setShowDaySwapModal(false)}
+              className="absolute right-5 top-5 p-2 rounded-xl text-slate-400 hover:text-white bg-white/5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3 className="text-lg font-bold mb-1 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+              <ArrowRightLeft className="w-4 h-4 text-emerald-400" />
+              Day Order Swap & Schedule Override
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Override what timetable runs on a specific date (e.g. follow Monday's timetable on Saturday for holiday compensation).
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (onAddScheduleOverride && swapDate) {
+                  onAddScheduleOverride({
+                    date: swapDate,
+                    runDaySchedule: swapTargetDay,
+                    reason: swapReason.trim() || undefined,
+                  });
+                  setSwapReason('');
+                  setShowDaySwapModal(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Target Calendar Date *
+                </label>
+                <input
+                  type="date"
+                  value={swapDate}
+                  onChange={(e) => setSwapDate(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Timetable Schedule to Run *
+                </label>
+                <select
+                  value={swapTargetDay}
+                  onChange={(e) => setSwapTargetDay(e.target.value as DayOfWeek)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                >
+                  {DAYS_ORDER.map((d) => (
+                    <option key={d} value={d} className="bg-slate-900">
+                      Run {d}'s Timetable
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Reason / Purpose (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Monday Holiday Compensation"
+                  value={swapReason}
+                  onChange={(e) => setSwapReason(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDaySwapModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-md"
+                >
+                  Apply Day Swap
+                </button>
+              </div>
+            </form>
+
+            {/* Active Overrides List */}
+            {state.scheduleOverrides && state.scheduleOverrides.length > 0 && (
+              <div className="mt-5 pt-4 border-t border-white/10">
+                <h4 className="text-xs font-bold text-slate-300 mb-2">
+                  Active Scheduled Swaps ({state.scheduleOverrides.length})
+                </h4>
+                <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                  {state.scheduleOverrides.map((ovr) => (
+                    <div
+                      key={ovr.id}
+                      className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <span className="font-bold text-white font-mono">{ovr.date}</span>
+                        <span className="text-emerald-400 font-semibold ml-2">→ {ovr.runDaySchedule}</span>
+                        {ovr.reason && <p className="text-[10px] text-slate-400 mt-0.5">{ovr.reason}</p>}
+                      </div>
+                      {onDeleteScheduleOverride && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteScheduleOverride(ovr.id)}
+                          className="p-1 rounded text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition-colors"
+                          title="Remove swap"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

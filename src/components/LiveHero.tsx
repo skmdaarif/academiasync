@@ -67,7 +67,7 @@ export function LiveHero({
   }, []);
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
-  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate, state.holidays);
+  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate, state.holidays, state.scheduleOverrides);
 
   // Background reminder notifications for upcoming lectures (<= 10 mins before class)
   useEffect(() => {
@@ -238,6 +238,25 @@ export function LiveHero({
               </h4>
               <p className="text-xs text-slate-400">
                 Timetable and attendance tracking are calibrated and ready to activate on Day 1.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day Order Swap Live Alert */}
+      {status.isScheduleOverride && (
+        <div className="mb-5 p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold">
+              🔄
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                Day Order Swap Active: Running {status.overrideDayName}'s Timetable
+              </h4>
+              <p className="text-xs text-slate-300">
+                {status.overrideReason ? `Reason: ${status.overrideReason}` : 'Today is running an alternate day timetable order for holiday compensation.'}
               </p>
             </div>
           </div>
@@ -467,7 +486,7 @@ export function LiveHero({
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/10 hover:bg-slate-700/60 hover:text-white transition-all"
                       title="Class not conducted due to half day, holiday, or faculty leave (0 safe bunk penalty)"
                     >
-                      ⚪ Cancelled
+                      ⚪ Not Conducted
                     </button>
                   </>
                 )}

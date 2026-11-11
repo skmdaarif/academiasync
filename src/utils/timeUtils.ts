@@ -1,4 +1,4 @@
-import { DayOfWeek, TimeSlot, Course, AcademicHoliday } from '../types';
+import { DayOfWeek, TimeSlot, Course, AcademicHoliday, ScheduleOverride } from '../types';
 
 export const DAYS_ORDER: DayOfWeek[] = [
   'Monday',
@@ -10,8 +10,14 @@ export const DAYS_ORDER: DayOfWeek[] = [
   'Sunday'
 ];
 
-export function getTodayDayName(): DayOfWeek {
-  const dayIndex = new Date().getDay(); // 0 is Sunday, 1 is Monday...
+export function getTodayDayName(overrides?: ScheduleOverride[]): DayOfWeek {
+  const today = new Date();
+  if (overrides && overrides.length > 0) {
+    const todayStr = today.toISOString().split('T')[0];
+    const match = overrides.find((o) => o.date === todayStr);
+    if (match) return match.runDaySchedule;
+  }
+  const dayIndex = today.getDay(); // 0 is Sunday, 1 is Monday...
   const map: Record<number, DayOfWeek> = {
     0: 'Sunday',
     1: 'Monday',
@@ -22,6 +28,26 @@ export function getTodayDayName(): DayOfWeek {
     6: 'Saturday',
   };
   return map[dayIndex] || 'Monday';
+}
+
+export function getEffectiveDayOfWeek(
+  date: Date = new Date(),
+  overrides?: ScheduleOverride[]
+): { day: DayOfWeek; isOverride: boolean; overrideReason?: string } {
+  const dateStr = date.toISOString().split('T')[0];
+  const override = overrides?.find((o) => o.date === dateStr);
+  if (override) {
+    return {
+      day: override.runDaySchedule,
+      isOverride: true,
+      overrideReason: override.reason,
+    };
+  }
+  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }) as DayOfWeek;
+  return {
+    day: dayName,
+    isOverride: false,
+  };
 }
 
 export function parseTimeToMinutes(timeStr: string): number {
@@ -109,18 +135,23 @@ export interface CurrentClassStatus {
   timeUntilNext: number; // Minutes until next class starts
   isHoliday?: boolean;
   holidayTitle?: string;
+  isScheduleOverride?: boolean;
+  overrideDayName?: DayOfWeek;
+  overrideReason?: string;
 }
 
 /**
  * Determines whether a time slot takes place on a given calendar date,
  * respecting:
  * 1. One-off makeup/extra sessions (specificDate must match targetDate)
- * 2. Weekly vs Odd-week vs Even-week recurrence (based on week index from semesterStartDate)
+ * 2. Day Order Overrides (e.g. Saturday running Monday's timetable)
+ * 3. Weekly vs Odd-week vs Even-week recurrence (based on week index from semesterStartDate)
  */
 export function isSlotActiveOnDate(
   slot: TimeSlot,
   targetDate: Date,
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  overrides?: ScheduleOverride[]
 ): boolean {
   const targetDateStr = targetDate.toISOString().split('T')[0];
 
@@ -134,9 +165,9 @@ export function isSlotActiveOnDate(
     return false;
   }
 
-  // 2. Day of Week Check
-  const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'long' }) as DayOfWeek;
-  if (slot.day !== dayName) return false;
+  // 2. Day of Week Check (taking into account Schedule Overrides / Day Order swaps)
+  const { day: targetDayName } = getEffectiveDayOfWeek(targetDate, overrides);
+  if (slot.day !== targetDayName) return false;
 
   // 3. Recurrence Check (odd_weeks vs even_weeks)
   if (!slot.recurrence || slot.recurrence === 'all') {
@@ -165,7 +196,8 @@ export function getCurrentAndNextClass(
   courses: Course[],
   currentTime: Date = new Date(),
   semesterStartDate?: string,
-  holidays?: AcademicHoliday[]
+  holidays?: AcademicHoliday[],
+  overrides?: ScheduleOverride[]
 ): CurrentClassStatus {
   const activeHoliday = isHolidayDate(currentTime, holidays);
   if (activeHoliday) {
@@ -182,11 +214,12 @@ export function getCurrentAndNextClass(
     };
   }
 
+  const effectiveDayInfo = getEffectiveDayOfWeek(currentTime, overrides);
   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
-  // Filter slots for today respecting one-offs and odd/even week recurrence
+  // Filter slots for today respecting one-offs, schedule overrides, and odd/even week recurrence
   const todaySlots = slots
-    .filter((s) => isSlotActiveOnDate(s, currentTime, semesterStartDate))
+    .filter((s) => isSlotActiveOnDate(s, currentTime, semesterStartDate, overrides))
     .sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
 
   let currentSlot: TimeSlot | null = null;
@@ -229,6 +262,9 @@ export function getCurrentAndNextClass(
     minutesRemaining,
     progressPercent,
     timeUntilNext,
+    isScheduleOverride: effectiveDayInfo.isOverride,
+    overrideDayName: effectiveDayInfo.isOverride ? effectiveDayInfo.day : undefined,
+    overrideReason: effectiveDayInfo.overrideReason,
   };
 }
 
