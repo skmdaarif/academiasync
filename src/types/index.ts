@@ -40,6 +40,7 @@ export interface UserAccount {
   collegeMinAttendance: number; // e.g. 75% set by University
   personalGoalAttendance: number; // e.g. 90% custom student target (>= collegeMinAttendance)
   targetAttendance?: number; // legacy alias for compatibility
+  initialAttendancePct?: number; // Baseline attendance % if onboarded mid-semester
   excusedPolicy?: 'exemption' | 'credit'; // 'exemption' (default): excludes from total classes; 'credit': counts as attended
   theme?: ThemeKey;
   staySignedIn?: boolean;
@@ -202,4 +203,32 @@ export interface StudentData {
   activeSemesterNumber?: number;
   theme: ThemeKey;
   activeView: 'dashboard' | 'timetable' | 'tasks' | 'attendance' | 'exams';
+}
+
+export interface MidSemCatchupTask {
+  title: string;
+  courseCode?: string;
+  dueDate: string;
+  dueTime?: string;
+  priority?: TaskPriority;
+  status: 'completed' | 'todo' | 'in-progress';
+  submissionUrl?: string;
+}
+
+export interface MidSemCatchupExam {
+  title: string;
+  examCategory: ExamCategory;
+  examType?: ExamType;
+  examDate: string;
+  maxMarks?: number;
+  marksObtained?: number;
+  courseCode?: string;
+  isCompleted?: boolean;
+}
+
+export interface MidSemCatchupData {
+  attendancePct?: number;
+  completedTasks: MidSemCatchupTask[];
+  pendingTasks: MidSemCatchupTask[];
+  conductedExams: MidSemCatchupExam[];
 }

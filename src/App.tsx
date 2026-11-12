@@ -9,7 +9,8 @@ import {
   AttendanceStatus,
   Exam,
   AcademicHoliday,
-  ScheduleOverride
+  ScheduleOverride,
+  MidSemCatchupData
 } from './types';
 import { 
   apiFetchStudentData, 
@@ -37,7 +38,8 @@ import {
   apiDeleteAccount,
   apiRestoreStudentData,
   apiBackfillSemesters,
-  apiPromoteSemester
+  apiPromoteSemester,
+  apiApplyMidSemCatchup
 } from './services/api';
 import { THEMES } from './styles/themes';
 import { AuthScreen } from './components/AuthScreen';
@@ -542,6 +544,22 @@ export function App() {
     }
   };
 
+  const handleApplyMidSemCatchup = async (catchup: MidSemCatchupData) => {
+    if (!currentUser) return;
+    try {
+      const res = await apiApplyMidSemCatchup(currentUser.id, catchup, true);
+      if (res.success && res.data) {
+        setState(res.data);
+        if (catchup.attendancePct != null) {
+          setCurrentUser((prev) => prev ? { ...prev, initialAttendancePct: catchup.attendancePct } : null);
+        }
+        showToast('Mid-semester calibration applied successfully!', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to apply calibration.', 'error');
+    }
+  };
+
   // Multi-Semester Advancement & Performance Vault Handlers
   const handlePromoteSemester = async (
     nextSemesterNumber: number,
@@ -671,8 +689,16 @@ export function App() {
           semesterNumber: activeSem,
         });
       } else {
+        let held = nc.baselineClassesHeld || 0;
+        let attended = nc.baselineAttendedClasses || 0;
+        if (held === 0 && currentUser.initialAttendancePct != null) {
+          held = 30;
+          attended = Math.round(held * (currentUser.initialAttendancePct / 100));
+        }
         finalizedCourses.push({
           ...nc,
+          baselineClassesHeld: held,
+          baselineAttendedClasses: attended,
           semesterNumber: activeSem,
         });
       }
@@ -1141,6 +1167,7 @@ export function App() {
           onDeleteAccount={handleDeleteAccount}
           onSyncToSQLite={handleSyncToSQLite}
           onOpenVault={() => setShowVaultModal(true)}
+          onApplyMidSemCatchup={handleApplyMidSemCatchup}
         />
       )}
 

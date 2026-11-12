@@ -213,6 +213,7 @@ ensureColumn('users', 'active_semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('users', 'semester_start_date', 'TEXT');
 ensureColumn('users', 'student_batch', 'TEXT');
 ensureColumn('users', 'excused_policy', "TEXT DEFAULT 'exemption'");
+ensureColumn('users', 'initial_attendance_pct', 'REAL');
 ensureColumn('academic_semesters', 'marksheet_ref', 'TEXT');
 ensureColumn('courses', 'semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('courses', 'baseline_classes_held', 'INTEGER DEFAULT 0');
@@ -484,6 +485,7 @@ app.post('/api/auth/register', async (req, res) => {
       personalGoalAttendance,
       admissionType,
       backfilledSemesters,
+      midSemCatchup,
     } = req.body;
 
     if (!email || !password || !name) {
@@ -526,6 +528,8 @@ app.post('/api/auth/register', async (req, res) => {
 
     const userId = crypto.randomUUID();
 
+    const initialAttPct = midSemCatchup?.attendancePct != null ? Number(midSemCatchup.attendancePct) : null;
+
     const registerTx = db.transaction(() => {
       db.prepare(`
         INSERT INTO users (
@@ -533,8 +537,8 @@ app.post('/api/auth/register', async (req, res) => {
           branch, degree_type, semester, total_semesters,
           college_min_attendance, personal_attendance_goal, target_attendance_percentage,
           theme_preference, admission_type, active_semester_number,
-          semester_start_date, student_batch, excused_policy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          semester_start_date, student_batch, excused_policy, initial_attendance_pct
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         userId,
         name.trim(),
@@ -554,7 +558,8 @@ app.post('/api/auth/register', async (req, res) => {
         activeSemNumber,
         semesterStartDate || null,
         studentBatch || null,
-        excusedPolicy || 'exemption'
+        excusedPolicy || 'exemption',
+        initialAttPct
       );
 
       // Create Active Semester record
@@ -589,6 +594,78 @@ app.post('/api/auth/register', async (req, res) => {
           );
         }
       }
+
+      // Insert Mid-Semester Catch-up tasks (completed & pending) and conducted exams
+      if (midSemCatchup) {
+        const { completedTasks, pendingTasks, conductedExams } = midSemCatchup;
+
+        // 1. Insert completed tasks (already submitted in elapsed weeks)
+        if (Array.isArray(completedTasks) && completedTasks.length > 0) {
+          const insertTask = db.prepare(`
+            INSERT INTO tasks (
+              id, user_id, title, due_date, due_time, priority, status, category, semester_number, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'medium', 'completed', 'assignment', ?, datetime('now'))
+          `);
+          for (const t of completedTasks) {
+            if (!t || !t.title) continue;
+            insertTask.run(
+              crypto.randomUUID(),
+              userId,
+              t.title.trim(),
+              t.dueDate || new Date().toISOString().split('T')[0],
+              t.dueTime || '23:59',
+              activeSemNumber
+            );
+          }
+        }
+
+        // 2. Insert pending/ongoing tasks (assigned & active)
+        if (Array.isArray(pendingTasks) && pendingTasks.length > 0) {
+          const insertPending = db.prepare(`
+            INSERT INTO tasks (
+              id, user_id, title, due_date, due_time, priority, status, category, submission_url, semester_number, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'assignment', ?, ?, datetime('now'))
+          `);
+          for (const t of pendingTasks) {
+            if (!t || !t.title) continue;
+            insertPending.run(
+              crypto.randomUUID(),
+              userId,
+              t.title.trim(),
+              t.dueDate || new Date().toISOString().split('T')[0],
+              t.dueTime || '23:59',
+              t.priority || 'medium',
+              t.status || 'todo',
+              t.submissionUrl || null,
+              activeSemNumber
+            );
+          }
+        }
+
+        // 3. Insert conducted exams (already taken e.g. MTT 1, CA 1)
+        if (Array.isArray(conductedExams) && conductedExams.length > 0) {
+          const insertExam = db.prepare(`
+            INSERT INTO exams (
+              id, user_id, title, exam_category, exam_type, exam_date,
+              max_marks, marks_obtained, semester_number, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
+          `);
+          for (const e of conductedExams) {
+            if (!e || !e.title) continue;
+            insertExam.run(
+              crypto.randomUUID(),
+              userId,
+              e.title.trim(),
+              e.examCategory || 'mtt',
+              e.examType || 'theory',
+              e.examDate || new Date().toISOString().split('T')[0],
+              e.maxMarks != null ? Number(e.maxMarks) : null,
+              e.marksObtained != null ? Number(e.marksObtained) : null,
+              activeSemNumber
+            );
+          }
+        }
+      }
     });
 
     registerTx();
@@ -608,6 +685,7 @@ app.post('/api/auth/register', async (req, res) => {
       semesterStartDate: semesterStartDate || undefined,
       studentBatch: studentBatch || undefined,
       excusedPolicy: excusedPolicy || 'exemption',
+      initialAttendancePct: initialAttPct != null ? initialAttPct : undefined,
       collegeMinAttendance: minAtt,
       personalGoalAttendance: persGoal,
       targetAttendance: minAtt,
@@ -642,7 +720,7 @@ app.post('/api/auth/login', async (req, res) => {
              branch, degree_type, semester, total_semesters,
              college_min_attendance, personal_attendance_goal, target_attendance_percentage,
              theme_preference, semester_start_date, admission_type, active_semester_number,
-             student_batch, excused_policy
+             student_batch, excused_policy, initial_attendance_pct
       FROM users WHERE LOWER(email) = ?
     `).get(normalizedEmail);
 
@@ -674,6 +752,7 @@ app.post('/api/auth/login', async (req, res) => {
       semesterStartDate: userRow.semester_start_date || undefined,
       studentBatch: userRow.student_batch || undefined,
       excusedPolicy: userRow.excused_policy || 'exemption',
+      initialAttendancePct: userRow.initial_attendance_pct != null ? Number(userRow.initial_attendance_pct) : undefined,
       collegeMinAttendance: collegeMin,
       personalGoalAttendance: personalGoal,
       targetAttendance: collegeMin,
@@ -1998,7 +2077,8 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
       SELECT id, full_name as name, email, country, college_name as collegeName,
              branch, degree_type as degreeType, semester, total_semesters as totalSemesters,
              semester_start_date as semesterStartDate, student_batch as studentBatch,
-             excused_policy as excusedPolicy, college_min_attendance as collegeMinAttendance,
+             excused_policy as excusedPolicy, initial_attendance_pct as initialAttendancePct,
+             college_min_attendance as collegeMinAttendance,
              personal_attendance_goal as personalGoalAttendance, theme_preference as theme
       FROM users WHERE id = ?
     `).get(id);
@@ -2006,10 +2086,117 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
     updated.collegeMinAttendance = Number(updated.collegeMinAttendance || 75);
     updated.personalGoalAttendance = Number(updated.personalGoalAttendance || updated.collegeMinAttendance);
     updated.targetAttendance = updated.collegeMinAttendance;
+    if (updated.initialAttendancePct != null) {
+      updated.initialAttendancePct = Number(updated.initialAttendancePct);
+    }
 
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Mid-Semester Catch-Up Endpoint (for existing users to calibrate anytime)
+app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
+  try {
+    const { attendancePct, completedTasks, pendingTasks, conductedExams, applyToExistingCourses } = req.body;
+    const userId = req.user.id;
+
+    const userRow = db.prepare('SELECT active_semester_number FROM users WHERE id = ?').get(userId);
+    const activeSemNumber = userRow?.active_semester_number || 1;
+
+    const catchupTx = db.transaction(() => {
+      // 1. Update initial attendance pct if provided
+      if (attendancePct != null) {
+        db.prepare('UPDATE users SET initial_attendance_pct = ? WHERE id = ?').run(Number(attendancePct), userId);
+
+        // Optionally apply to active courses that currently have 0 attendance records
+        if (applyToExistingCourses) {
+          const courses = db.prepare('SELECT id, baseline_classes_held, baseline_attended_classes FROM courses WHERE user_id = ? AND semester_number = ?').all(userId, activeSemNumber);
+          const updateCourseBaseline = db.prepare('UPDATE courses SET baseline_classes_held = ?, baseline_attended_classes = ? WHERE id = ?');
+          for (const c of courses) {
+            const assumedHeld = Math.max(20, c.baseline_classes_held || 30);
+            const assumedAttended = Math.round(assumedHeld * (Number(attendancePct) / 100));
+            updateCourseBaseline.run(assumedHeld, assumedAttended, c.id);
+          }
+        }
+      }
+
+      // 2. Insert completed tasks
+      if (Array.isArray(completedTasks) && completedTasks.length > 0) {
+        const insertTask = db.prepare(`
+          INSERT INTO tasks (
+            id, user_id, title, due_date, due_time, priority, status, category, semester_number, created_at
+          ) VALUES (?, ?, ?, ?, ?, 'medium', 'completed', 'assignment', ?, datetime('now'))
+        `);
+        for (const t of completedTasks) {
+          if (!t || !t.title) continue;
+          insertTask.run(
+            crypto.randomUUID(),
+            userId,
+            t.title.trim(),
+            t.dueDate || new Date().toISOString().split('T')[0],
+            t.dueTime || '23:59',
+            activeSemNumber
+          );
+        }
+      }
+
+      // 3. Insert pending tasks
+      if (Array.isArray(pendingTasks) && pendingTasks.length > 0) {
+        const insertPending = db.prepare(`
+          INSERT INTO tasks (
+            id, user_id, title, due_date, due_time, priority, status, category, submission_url, semester_number, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'assignment', ?, ?, datetime('now'))
+        `);
+        for (const t of pendingTasks) {
+          if (!t || !t.title) continue;
+          insertPending.run(
+            crypto.randomUUID(),
+            userId,
+            t.title.trim(),
+            t.dueDate || new Date().toISOString().split('T')[0],
+            t.dueTime || '23:59',
+            t.priority || 'medium',
+            t.status || 'todo',
+            t.submissionUrl || null,
+            activeSemNumber
+          );
+        }
+      }
+
+      // 4. Insert conducted exams
+      if (Array.isArray(conductedExams) && conductedExams.length > 0) {
+        const insertExam = db.prepare(`
+          INSERT INTO exams (
+            id, user_id, title, exam_category, exam_type, exam_date,
+            max_marks, marks_obtained, semester_number, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
+        `);
+        for (const e of conductedExams) {
+          if (!e || !e.title) continue;
+          insertExam.run(
+            crypto.randomUUID(),
+            userId,
+            e.title.trim(),
+            e.examCategory || 'mtt',
+            e.examType || 'theory',
+            e.examDate || new Date().toISOString().split('T')[0],
+            e.maxMarks != null ? Number(e.maxMarks) : null,
+            e.marksObtained != null ? Number(e.marksObtained) : null,
+            activeSemNumber
+          );
+        }
+      }
+    });
+
+    catchupTx();
+
+    const data = fetchFullStudentData(userId);
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('Mid-Sem Catch-up Error:', err);
+    res.status(500).json({ error: 'Failed to process mid-semester catch-up: ' + err.message });
   }
 });
 

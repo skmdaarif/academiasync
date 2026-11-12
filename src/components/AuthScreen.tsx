@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserAccount, StudentData, AdmissionType, AcademicSemester } from '../types';
+import { UserAccount, StudentData, AdmissionType, AcademicSemester, MidSemCatchupData, MidSemCatchupTask, MidSemCatchupExam, TaskPriority, ExamCategory } from '../types';
 import { apiLogin, apiRegister, apiCheckHealth } from '../services/api';
 import { COUNTRIES_UNIVERSITIES } from '../data/universities';
 import { DEGREE_PROGRAMS, getSemestersForDegree } from '../data/degrees';
@@ -21,7 +21,12 @@ import {
   Sparkles,
   Database,
   History,
-  Calendar
+  Calendar,
+  Plus,
+  Trash2,
+  ClipboardList,
+  FileText,
+  CheckSquare
 } from 'lucide-react';
 
 interface AuthScreenProps {
@@ -64,6 +69,20 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [skipBackfill, setSkipBackfill] = useState(false);
 
   const currentSemNum = parseInt(semester.replace(/\D/g, ''), 10) || 1;
+
+  // Mid-Semester Catch-Up / Calibration State (when classes started before today)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isPastTermStart = semesterStartDate && semesterStartDate < todayStr;
+  const elapsedDays = isPastTermStart
+    ? Math.max(0, Math.floor((new Date(todayStr).getTime() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
+  const elapsedWeeks = Math.floor(elapsedDays / 7);
+
+  const [skipMidSemCatchup, setSkipMidSemCatchup] = useState(false);
+  const [midSemAttendancePct, setMidSemAttendancePct] = useState(80);
+  const [completedTasksList, setCompletedTasksList] = useState<MidSemCatchupTask[]>([]);
+  const [pendingTasksList, setPendingTasksList] = useState<MidSemCatchupTask[]>([]);
+  const [conductedExamsList, setConductedExamsList] = useState<MidSemCatchupExam[]>([]);
 
   useEffect(() => {
     if (currentSemNum > 1) {
@@ -166,6 +185,16 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           });
         }
 
+        let finalMidSemCatchup: MidSemCatchupData | undefined = undefined;
+        if (isPastTermStart && !skipMidSemCatchup) {
+          finalMidSemCatchup = {
+            attendancePct: Number(midSemAttendancePct) || 80,
+            completedTasks: completedTasksList.filter((t) => t.title && t.title.trim()),
+            pendingTasks: pendingTasksList.filter((t) => t.title && t.title.trim()),
+            conductedExams: conductedExamsList.filter((e) => e.title && e.title.trim()),
+          };
+        }
+
         const res = await apiRegister({
           name,
           email,
@@ -180,6 +209,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           staySignedIn,
           admissionType: currentSemNum > 1 ? admissionType : 'fresh',
           backfilledSemesters: finalBackfilledSemesters,
+          midSemCatchup: finalMidSemCatchup,
         });
 
         if (res.success && res.user && res.data) {
@@ -528,6 +558,360 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                   ))}
                 </div>
               </div>
+
+              {/* Mid-Semester Catch-Up / Calibration (When classes started prior to today) */}
+              {isPastTermStart && (
+                <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30 space-y-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        Mid-Semester Catch-Up ({elapsedWeeks > 0 ? `${elapsedWeeks} week${elapsedWeeks > 1 ? 's' : ''}` : `${elapsedDays} day${elapsedDays > 1 ? 's' : ''}`} elapsed)
+                      </span>
+                      <p className="text-[11px] text-slate-300 mt-0.5">
+                        Classes started on {semesterStartDate}. Let's calibrate your progress so your safe-bunks and exam goals start accurate.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSkipMidSemCatchup(!skipMidSemCatchup)}
+                      className="text-[10px] text-amber-400 hover:text-amber-200 underline font-medium whitespace-nowrap"
+                    >
+                      {skipMidSemCatchup ? 'Configure Catch-Up' : 'Skip for now'}
+                    </button>
+                  </div>
+
+                  {!skipMidSemCatchup && (
+                    <div className="space-y-4 pt-2 border-t border-amber-500/20">
+                      {/* Question 1: Overall Attendance % till now */}
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-200 mb-1">
+                          1. What is your approximate attendance percentage till now?
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {[70, 75, 80, 85, 90, 95].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => setMidSemAttendancePct(pct)}
+                              className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all ${
+                                midSemAttendancePct === pct
+                                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                                  : 'bg-white/5 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {pct}%
+                            </button>
+                          ))}
+                          <div className="w-16">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={midSemAttendancePct}
+                              onChange={(e) => setMidSemAttendancePct(Number(e.target.value) || 0)}
+                              className="w-full px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Calibrates your baseline attendance so safe-bunk capacity reflects elapsed lectures.
+                        </p>
+                      </div>
+
+                      {/* Question 2: Completed / Already Submitted Assignments */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
+                            <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+                            2. Any assignments already submitted / completed?
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCompletedTasksList([
+                                ...completedTasksList,
+                                {
+                                  title: `Assignment ${completedTasksList.length + 1}`,
+                                  dueDate: semesterStartDate,
+                                  status: 'completed',
+                                },
+                              ]);
+                            }}
+                            className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold"
+                          >
+                            <Plus className="w-3 h-3" /> Add Completed
+                          </button>
+                        </div>
+
+                        {completedTasksList.length === 0 ? (
+                          <p className="text-[10px] text-slate-400 italic">None added yet. Click above if you have already submitted past lab reports or assignments.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {completedTasksList.map((t, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5 bg-black/30 p-1.5 rounded-lg border border-white/5">
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Lab Report 1 / Case Study"
+                                  value={t.title}
+                                  onChange={(e) => {
+                                    const updated = [...completedTasksList];
+                                    updated[idx].title = e.target.value;
+                                    setCompletedTasksList(updated);
+                                  }}
+                                  className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                                />
+                                <input
+                                  type="date"
+                                  value={t.dueDate}
+                                  onChange={(e) => {
+                                    const updated = [...completedTasksList];
+                                    updated[idx].dueDate = e.target.value;
+                                    setCompletedTasksList(updated);
+                                  }}
+                                  className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setCompletedTasksList(completedTasksList.filter((_, i) => i !== idx))}
+                                  className="p-1 text-slate-400 hover:text-red-400"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Question 3: Pending / Ongoing Assignments Currently Assigned */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
+                            <ClipboardList className="w-3.5 h-3.5 text-amber-400" />
+                            3. Any assignments currently pending or ongoing?
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const inOneWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                              setPendingTasksList([
+                                ...pendingTasksList,
+                                {
+                                  title: `Assignment ${pendingTasksList.length + 1}`,
+                                  dueDate: inOneWeek,
+                                  priority: 'medium',
+                                  status: 'todo',
+                                },
+                              ]);
+                            }}
+                            className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold"
+                          >
+                            <Plus className="w-3 h-3" /> Add Pending
+                          </button>
+                        </div>
+
+                        {pendingTasksList.length === 0 ? (
+                          <p className="text-[10px] text-slate-400 italic">None added yet. Click above to track active homework or project submissions.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {pendingTasksList.map((t, idx) => (
+                              <div key={idx} className="flex flex-col gap-1.5 bg-black/30 p-2 rounded-lg border border-white/5">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Operating Systems Paging Problem"
+                                    value={t.title}
+                                    onChange={(e) => {
+                                      const updated = [...pendingTasksList];
+                                      updated[idx].title = e.target.value;
+                                      setPendingTasksList(updated);
+                                    }}
+                                    className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                                  />
+                                  <input
+                                    type="date"
+                                    value={t.dueDate}
+                                    onChange={(e) => {
+                                      const updated = [...pendingTasksList];
+                                      updated[idx].dueDate = e.target.value;
+                                      setPendingTasksList(updated);
+                                    }}
+                                    className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
+                                  />
+                                  <select
+                                    value={t.priority || 'medium'}
+                                    onChange={(e) => {
+                                      const updated = [...pendingTasksList];
+                                      updated[idx].priority = e.target.value as TaskPriority;
+                                      setPendingTasksList(updated);
+                                    }}
+                                    className="w-20 px-1 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
+                                  >
+                                    <option value="low" className="bg-slate-900">Low</option>
+                                    <option value="medium" className="bg-slate-900">Medium</option>
+                                    <option value="high" className="bg-slate-900">High</option>
+                                    <option value="urgent" className="bg-slate-900">Urgent</option>
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingTasksList(pendingTasksList.filter((_, i) => i !== idx))}
+                                    className="p-1 text-slate-400 hover:text-red-400"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <input
+                                  type="url"
+                                  placeholder="Optional LMS submission link (Classroom / Moodle / Drive)"
+                                  value={t.submissionUrl || ''}
+                                  onChange={(e) => {
+                                    const updated = [...pendingTasksList];
+                                    updated[idx].submissionUrl = e.target.value;
+                                    setPendingTasksList(updated);
+                                  }}
+                                  className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none placeholder:text-slate-500"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Question 4: Already Conducted Exams / Tests */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                            4. Which exams have already been conducted?
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConductedExamsList([
+                                  ...conductedExamsList,
+                                  {
+                                    title: `MTT ${conductedExamsList.filter(e => e.examCategory === 'mtt').length + 1}`,
+                                    examCategory: 'mtt',
+                                    examDate: semesterStartDate,
+                                    maxMarks: 30,
+                                    marksObtained: 24,
+                                  },
+                                ]);
+                              }}
+                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-semibold"
+                            >
+                              <Plus className="w-3 h-3" /> Add MTT
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConductedExamsList([
+                                  ...conductedExamsList,
+                                  {
+                                    title: `CA ${conductedExamsList.filter(e => e.examCategory === 'ca').length + 1}`,
+                                    examCategory: 'ca',
+                                    examDate: semesterStartDate,
+                                    maxMarks: 20,
+                                    marksObtained: 17,
+                                  },
+                                ]);
+                              }}
+                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold"
+                            >
+                              <Plus className="w-3 h-3" /> Add CA
+                            </button>
+                          </div>
+                        </div>
+
+                        {conductedExamsList.length === 0 ? (
+                          <p className="text-[10px] text-slate-400 italic">None added yet. Click above to log past MTTs, CAs, Quizzes, or Vivas with marks obtained.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {conductedExamsList.map((e, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5 bg-black/30 p-2 rounded-lg border border-white/5">
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Mid-Term Test 1"
+                                  value={e.title}
+                                  onChange={(ev) => {
+                                    const updated = [...conductedExamsList];
+                                    updated[idx].title = ev.target.value;
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                                />
+                                <select
+                                  value={e.examCategory}
+                                  onChange={(ev) => {
+                                    const updated = [...conductedExamsList];
+                                    updated[idx].examCategory = ev.target.value as ExamCategory;
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className="w-20 px-1 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
+                                >
+                                  <option value="mtt" className="bg-slate-900">MTT</option>
+                                  <option value="ca" className="bg-slate-900">CA</option>
+                                  <option value="quiz" className="bg-slate-900">Quiz</option>
+                                  <option value="viva" className="bg-slate-900">Viva</option>
+                                  <option value="ett" className="bg-slate-900">ETT</option>
+                                  <option value="project" className="bg-slate-900">Project</option>
+                                </select>
+                                <input
+                                  type="date"
+                                  value={e.examDate}
+                                  onChange={(ev) => {
+                                    const updated = [...conductedExamsList];
+                                    updated[idx].examDate = ev.target.value;
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
+                                />
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    placeholder="Marks"
+                                    value={e.marksObtained ?? ''}
+                                    onChange={(ev) => {
+                                      const updated = [...conductedExamsList];
+                                      updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
+                                      setConductedExamsList(updated);
+                                    }}
+                                    className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
+                                  />
+                                  <span className="text-slate-400 text-xs">/</span>
+                                  <input
+                                    type="number"
+                                    placeholder="Max"
+                                    value={e.maxMarks ?? ''}
+                                    onChange={(ev) => {
+                                      const updated = [...conductedExamsList];
+                                      updated[idx].maxMarks = ev.target.value ? Number(ev.target.value) : undefined;
+                                      setConductedExamsList(updated);
+                                    }}
+                                    className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setConductedExamsList(conductedExamsList.filter((_, i) => i !== idx))}
+                                  className="p-1 text-slate-400 hover:text-red-400"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Marks scored feed straight into your CIE:SEE Final Exam target calculations.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* If semester > 1, Ask Fresh/Lateral vs Continuing Student */}
               {currentSemNum > 1 && (

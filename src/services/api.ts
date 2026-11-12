@@ -1,4 +1,4 @@
-import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam, AcademicHoliday, ScheduleOverride } from '../types';
+import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam, AcademicHoliday, ScheduleOverride, MidSemCatchupData } from '../types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'academiasync_auth_token';
@@ -46,6 +46,10 @@ export function getLocalUsers(): UserAccount[] {
   } catch {
     return [];
   }
+}
+
+export function getLocalUser(userId: string): UserAccount | undefined {
+  return getLocalUsers().find((u) => u.id === userId);
 }
 
 export function saveLocalUser(user: UserAccount) {
@@ -123,6 +127,7 @@ export interface RegisterPayload {
   admissionType?: AdmissionType;
   semesterStartDate?: string;
   backfilledSemesters?: AcademicSemester[];
+  midSemCatchup?: MidSemCatchupData;
 }
 
 export async function apiRegister(payload: RegisterPayload): Promise<{ success: boolean; error?: string; token?: string; user?: UserAccount; data?: StudentData; mode: 'sqlite' | 'local' }> {
@@ -189,6 +194,63 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     semesters: initialSemesters,
     activeSemesterNumber: parsedSem,
   };
+
+  if (payload.midSemCatchup) {
+    if (payload.midSemCatchup.attendancePct != null) {
+      localUser.initialAttendancePct = payload.midSemCatchup.attendancePct;
+    }
+    if (payload.midSemCatchup.completedTasks?.length) {
+      for (const t of payload.midSemCatchup.completedTasks) {
+        blankData.tasks.push({
+          id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          userId: localId,
+          title: t.title.trim(),
+          dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+          dueTime: t.dueTime || '23:59',
+          priority: 'medium',
+          status: 'completed',
+          category: 'assignment',
+          semesterNumber: parsedSem,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+    if (payload.midSemCatchup.pendingTasks?.length) {
+      for (const t of payload.midSemCatchup.pendingTasks) {
+        blankData.tasks.push({
+          id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          userId: localId,
+          title: t.title.trim(),
+          dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+          dueTime: t.dueTime || '23:59',
+          priority: t.priority || 'medium',
+          status: t.status || 'todo',
+          category: 'assignment',
+          submissionUrl: t.submissionUrl,
+          semesterNumber: parsedSem,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+    if (payload.midSemCatchup.conductedExams?.length) {
+      if (!blankData.exams) blankData.exams = [];
+      for (const e of payload.midSemCatchup.conductedExams) {
+        blankData.exams.push({
+          id: `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          userId: localId,
+          title: e.title.trim(),
+          examCategory: e.examCategory || 'mtt',
+          examType: e.examType || 'theory',
+          examDate: e.examDate || new Date().toISOString().split('T')[0],
+          maxMarks: e.maxMarks,
+          marksObtained: e.marksObtained,
+          semesterNumber: parsedSem,
+          notes: 'Conducted prior to onboarding',
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+  }
 
   saveLocalUser(localUser);
   saveLocalStudentData(localId, blankData);
@@ -1023,5 +1085,100 @@ export async function apiPromoteSemester(
     user: currUser || undefined,
     data: localData,
   };
+}
+
+export async function apiApplyMidSemCatchup(
+  userId: string,
+  catchup: MidSemCatchupData,
+  applyToExistingCourses: boolean = true
+): Promise<{ success: boolean; data?: StudentData; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/users/mid-sem-catchup`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ ...catchup, applyToExistingCourses }),
+    });
+    if (res.ok) return await res.json();
+  } catch {
+    // Fallback to local storage
+  }
+
+  const data = getLocalStudentData(userId);
+  const user = getLocalUser(userId);
+  const activeSem = data.activeSemesterNumber || 1;
+
+  if (catchup.attendancePct != null) {
+    if (user) {
+      user.initialAttendancePct = catchup.attendancePct;
+      saveLocalUser(user);
+    }
+    if (applyToExistingCourses && data.courses.length > 0) {
+      data.courses = data.courses.map((c) => {
+        if ((c.semesterNumber || 1) === activeSem) {
+          const held = Math.max(20, c.baselineClassesHeld || 30);
+          const attended = Math.round(held * (catchup.attendancePct! / 100));
+          return { ...c, baselineClassesHeld: held, baselineAttendedClasses: attended };
+        }
+        return c;
+      });
+    }
+  }
+
+  if (catchup.completedTasks?.length) {
+    for (const t of catchup.completedTasks) {
+      data.tasks.push({
+        id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        userId,
+        title: t.title.trim(),
+        dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+        dueTime: t.dueTime || '23:59',
+        priority: 'medium',
+        status: 'completed',
+        category: 'assignment',
+        semesterNumber: activeSem,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (catchup.pendingTasks?.length) {
+    for (const t of catchup.pendingTasks) {
+      data.tasks.push({
+        id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        userId,
+        title: t.title.trim(),
+        dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+        dueTime: t.dueTime || '23:59',
+        priority: t.priority || 'medium',
+        status: t.status || 'todo',
+        category: 'assignment',
+        submissionUrl: t.submissionUrl,
+        semesterNumber: activeSem,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (catchup.conductedExams?.length) {
+    if (!data.exams) data.exams = [];
+    for (const e of catchup.conductedExams) {
+      data.exams.push({
+        id: `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        userId,
+        title: e.title.trim(),
+        examCategory: e.examCategory || 'mtt',
+        examType: e.examType || 'theory',
+        examDate: e.examDate || new Date().toISOString().split('T')[0],
+        maxMarks: e.maxMarks,
+        marksObtained: e.marksObtained,
+        semesterNumber: activeSem,
+        notes: 'Conducted prior to onboarding',
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  saveLocalStudentData(userId, data);
+  return { success: true, data };
 }
 
