@@ -1,6 +1,6 @@
-# 🎓 AcademiaSync
+# 🎓 AcademiaSync (v2.1.0)
 
-> **Modern College Timetable, Safe-Bunk Attendance Engine & Task Management Hub**
+> **Complete University Timetable, Safe-Bunk Attendance Engine, Day Order Swaps & Academic Productivity Suite**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -14,235 +14,304 @@
 
 ## 📖 Overview
 
-**AcademiaSync** is a full-stack, local-first academic productivity suite built specifically for university and college students. It pairs real-time class schedule management with an intelligent attendance simulation engine that calculates **safe bunk capacity** and **shortage recovery**, an assignment Kanban board with subtask tracking, exam countdowns, retroactive attendance history logs, and cross-platform calendar synchronization (`.ics` / Google Calendar / Apple Calendar / Outlook).
+**AcademiaSync** is a full-stack, local-first academic operating system engineered specifically for college and university students. It combines real-time class tracking, automated timetable PDF scanning, an intelligent attendance engine with **Safe Bunk Capacity** and **Shortage Recovery**, institutional **Day Order Swaps** (compensatory days), university **On-Duty (OD) / Excused credit policies**, assignment Kanban boards with LMS submission links, multi-semester transcript vaulting, and native calendar export (`.ics` / Google Calendar / Apple Calendar).
 
-Running on a **zero-config embedded SQLite engine** (`better-sqlite3`), any student can clone and start using AcademiaSync in seconds on their personal laptop without needing Docker, database servers, or internet access.
-
----
-
-## ✨ Key Features
-
-### ⚡ 1. Live Lecture Ticker & Real-Time Status
-- **Real-Time Dynamic Indicator**: Continuously computes ongoing lecture status based on system time and current day.
-- **Progress Bar & Countdown**: Visual progress bar tracking elapsed lecture minutes and countdown to period end.
-- **"Up Next" Preview**: Displays next classroom, professor, and countdown before the next session begins.
-- **1-Tap Attendance**: Log *Present* or *Missed / Bunk* directly from the hero header with instant database updates.
-
-### 🗓️ 2. Dual-View Timetable Matrix
-- **Daily Agenda View**: Chronological lecture timeline with room numbers, instructors, course tags, and meeting links.
-- **Weekly Matrix View**: 7-day multi-column interactive schedule with visual color-coding and overlap detection.
-- **Slot Management**: Create, edit, and categorize slots (*Lecture*, *Lab*, *Tutorial*, *Seminar*, *Club / Activity*).
-
-### 📊 3. Attendance & "Safe Bunk" Engine
-- **Attendance Percentage Meter**: Visual circular gauge tracking current attendance against university minimums (e.g., 75%) or personal targets.
-- **Safe Bunk Calculator**: Calculates the exact number of consecutive lectures you can safely skip without dropping below your target percentage:
-  $$\text{Safe Bunks} = \left\lfloor \frac{\text{Attended} - (\text{Target} \times \text{Total})}{1 - \text{Target}} \right\rfloor$$
-- **Shortage Recovery Calculator**: If you drop below the required percentage, instantly calculates the consecutive classes you must attend to recover:
-  $$\text{Classes Needed} = \left\lceil \frac{(\text{Target} \times \text{Total}) - \text{Attended}}{1 - \text{Target}} \right\rceil$$
-
-### 📋 4. Assignment & Exam Kanban Board
-- **Three-Column Workflow**: Drag-and-drop or status-toggle tasks across **To Do**, **In Progress**, and **Completed**.
-- **Priority & Categorization**: Mark tasks as *Urgent* 🔥, *High* ⚠️, *Medium*, or *Low*, categorized by *Assignment*, *Exam*, *Project*, *Quiz*, or *Personal*.
-- **Interactive Subtasks**: Track granular deliverables with checklists, progress percentages, and confetti celebrations upon completion.
-
-### ⏳ 5. Exam & Viva Countdown Hub
-- Live countdown ticker (Days, Hours, Minutes, Seconds) for Midterms, Lab Vivas, and End-Semester Finals.
-- Built-in syllabus module checklist for systematic topic-by-topic revision tracking.
-
-### 🎨 6. Six Aesthetic Built-in Themes
-Switch effortlessly between bespoke color palettes with smooth transitions:
-- 🌙 **Dark Slate Pro** (Default modern dark mode)
-- ✨ **Midnight OLED** (True-black contrast for OLED displays)
-- ⚡ **Cyberpunk Neon** (Vibrant high-contrast accents)
-- 🌲 **Emerald Forest** (Soothing deep green & mint tones)
-- 🌅 **Sunset Amber** (Warm twilight hues)
-- ☀️ **Clean Minimalist** (Crisp high-readability light theme)
-
-### 📅 7. Calendar Export & Offline Portability
-- **iCalendar (`.ics`) Sync**: 1-click export of recurring weekly timetable schedules and assignment deadlines directly into Google Calendar, Apple Calendar, or Microsoft Outlook.
-- **Print / PDF Sheet**: Formats clean, print-ready schedule overviews using `jspdf` and `html2canvas`.
-- **JSON Backup & Restore**: Download encrypted offline JSON snapshots and restore state anytime.
-
-### 📑 8. 1-Click Timetable PDF Scanner & Auto-Populator
-- **Automatic PDF Schedule Ingestion**: Upload an official university or college schedule PDF (e.g. LPU or university ERP exports) to populate all courses and weekly timetable slots in under 2 seconds.
-- **Intelligent Entity Extraction**:
-  - Course Catalog: Course codes, full titles, credits, faculty names, and default lecture rooms.
-  - Weekly Matrix: Monday through Sunday periods, start/end times in 24h format, and classroom numbers.
-  - Student Profile: Auto-detects student registration VID and home section.
-- **Lab Batch Group Filtering**: Lets students choose their assigned lab group (e.g., `Group 1`, `Group 2`, or `All`) to automatically exclude other batches' practical sessions.
-- **100% Private & Local**: Client-side parsing using Mozilla `pdfjs-dist` with zero external cloud APIs or data transmission.
-
-### 🏛️ 9. Multi-Semester History & Academic Performance Vault (v2.1.0)
-- **Zero Data Loss Across Semesters**: Older semesters' timetables, courses, and attendance logs are never wiped or overwritten when starting a new term. Every record is indexed and preserved by `semesterNumber`.
-- **Degree KPI Tracking**: Aggregates lifetime degree metrics in the Vault: Total Credits Earned, Overall Average Attendance %, and Cumulative GPA (CGPA).
-- **Historical Snapshot Browser**: Inspect any past semester's schedule matrix, course list, or attendance records with a single click from the Header dropdown with full read-only snapshot protection.
-
-### 🎓 10. Smart Onboarding & Prior Semester Backfill
-- **Intelligent Admission Check**: If a student registers at a semester after Semester 1 (e.g. Sem 3 or Sem 5), AcademiaSync asks if they are a **Fresh / Lateral Entry** or a **Continuing Student**.
-- **Frictionless Backfill**: Continuing students can log their past semesters' attendance %, credits earned, and SGPA on registration or skip to fill anytime in the Vault.
-
-### 🚀 11. "Promote to Next Semester" Advancement Wizard
-- **Automated Term Closing**: Computes closing semester attendance percentage and credit totals, archives the term in SQLite, and advances the student to `Semester X+1` with a fresh schedule canvas ready for the new term's PDF scan!
+Running on a **zero-configuration embedded SQLite engine** (`better-sqlite3`), you can clone and run AcademiaSync on a personal laptop without setting up external database servers, containers, or third-party cloud accounts.
 
 ---
 
-## 🛠️ Tech Stack
+## 🖥️ Fresh OS Setup Guide (From Scratch)
 
-| Category | Technology | Description |
-| :--- | :--- | :--- |
-| **Frontend Framework** | [React 19](https://react.dev) | High-performance reactive UI with concurrency |
-| **Language** | [TypeScript 6](https://www.typescriptlang.org) | End-to-end type safety |
-| **Build Tool** | [Vite 8](https://vite.dev) | Ultra-fast HMR and bundle optimization |
-| **Styling** | [Tailwind CSS v4](https://tailwindcss.com) | Modern utility-first CSS design system |
-| **Icons** | [Lucide React](https://lucide.dev) | Comprehensive, clean icon set |
-| **Backend** | [Express 5](https://expressjs.com) | Node.js REST API with modular routing |
-| **Database** | [SQLite 3 (better-sqlite3)](https://www.sqlite.org) | Embedded zero-config local database with WAL mode & atomic transactions |
-| **PDF Processing** | [PDF.js (pdfjs-dist)](https://mozilla.github.io/pdf.js/) | Fast client-side timetable extraction & spatial grid parsing |
-| **Security** | [BcryptJS](https://www.npmjs.com/package/bcryptjs) | Password hashing with salt generation |
-| **Utilities** | `date-fns`, `canvas-confetti`, `jspdf` | Date math, celebratory UI, and document generation |
+Follow the section below corresponding to your operating system if you are setting up on a **brand-new, completely fresh computer**.
 
----
-
-## 📁 Project Structure
-
-```
-├── server.js               # Express REST API & PostgreSQL connection pool
-├── schema.sql              # Database DDL (tables, ENUMs, indices, triggers)
-├── seed.sql                # Starter sample data for quick testing
-├── vite.config.ts          # Vite configuration with API reverse proxy
-├── tsconfig.json           # TypeScript configuration
-├── package.json            # Scripts & project dependencies
-├── .env.example            # Environment variables template
-├── public/                 # Static assets & icons
-└── src/
-    ├── App.tsx             # Master application state & auto-logout session logic
-    ├── main.tsx            # React application entrypoint
-    ├── components/
-    │   ├── AddModal.tsx            # Create/edit dialog for courses, slots, and tasks
-    │   ├── AttendanceCalculator.tsx# Attendance engine with Safe Bunk & Recovery
-    │   ├── AuthScreen.tsx          # Student sign-up & login screens
-    │   ├── EmptyState.tsx          # Informative placeholders for empty views
-    │   ├── ExamCountdownHub.tsx    # Live exam countdowns and syllabus checklist
-    │   ├── ExportModal.tsx         # iCal, PDF, and JSON data export modal
-    │   ├── Header.tsx              # Navigation bar, view selector & theme switcher
-    │   ├── LiveHero.tsx            # Current lecture ticker, countdown & quick actions
-    │   ├── SettingsModal.tsx       # Student profile & attendance criteria settings
-    │   ├── TaskManager.tsx         # Kanban assignment board with subtasks
-    │   └── TimetableGrid.tsx       # Daily Agenda and 7-day Weekly Grid views
-    ├── data/
-    │   ├── degrees.ts              # Degree presets (B.Tech, B.Sc, M.Tech, etc.)
-    │   └── universities.ts         # University listing for onboarding
-    ├── services/
-    │   ├── api.ts                  # REST API client fetch functions
-    │   ├── auth.ts                 # Authentication utilities
-    │   └── storage.ts              # JSON export & restore parsers
-    ├── styles/
-    │   └── themes.ts               # Theme definitions and color constants
-    ├── types/
-    │   └── index.ts                # TypeScript type definitions and interfaces
-    └── utils/
-        ├── calendarExport.ts       # RFC 5545 iCalendar generator & PDF exporter
-        └── timeUtils.ts            # Time calculations, periods & day helpers
+```mermaid
+flowchart LR
+    A["Fresh OS"] --> B["1. Install Node.js & Git"]
+    B --> C["2. Clone Repo / Download ZIP"]
+    C --> D["3. Run npm install"]
+    D --> E["4. Run npm run dev"]
+    E --> F["Open http://localhost:5173"]
 ```
 
 ---
 
-## 🚀 Getting Started (Zero Setup in 30 Seconds)
+### 🪟 Windows (Windows 10 / 11)
 
-AcademiaSync runs on an **Embedded SQLite Engine** with browser offline fallback. Any student can clone and run it immediately on their laptop with **zero database installation, zero Docker, and zero server maintenance**:
+On a freshly installed Windows machine, no developer tools are pre-installed. You can install everything via the terminal or with visual graphical installers:
 
+#### Option A: Fast Setup via Windows Terminal / PowerShell (Recommended)
+1. Press `Win + X` and select **Terminal** (or **PowerShell**).
+2. Install **Git** and **Node.js LTS** using the built-in Windows Package Manager (`winget`):
+   ```powershell
+   winget install --id Git.Git -e --source winget
+   winget install --id OpenJS.NodeJS.LTS -e --source winget
+   ```
+3. **Close and reopen PowerShell** so your system recognizes the newly installed `git` and `node` commands.
+4. Verify the installations:
+   ```powershell
+   node -v
+   npm -v
+   git --version
+   ```
+
+#### Option B: Setup via Official Web Installers
+1. **Install Git**: Download the 64-bit installer from [git-scm.com/download/win](https://git-scm.com/download/win). Follow the setup wizard (default options are recommended).
+2. **Install Node.js**: Download the **LTS (Long Term Support)** installer from [nodejs.org](https://nodejs.org). Run the `.msi` installer. On the *"Tools for Native Modules"* screen, ensure the box to install Python/build tools is checked.
+3. Open **Command Prompt** or **PowerShell** and verify with `node -v` and `git --version`.
+
+---
+
+### 🍎 macOS (Apple Silicon M1/M2/M3/M4 or Intel)
+
+On a freshly installed Mac:
+
+1. Open **Terminal** (Press `Cmd + Space`, type `Terminal`, and press `Enter`).
+2. Install **Apple Command Line Tools** (provides Git, C++, and build compilers):
+   ```bash
+   xcode-select --install
+   ```
+   *A software update popup will appear—click **Install** and wait for it to complete.*
+
+3. Install **Node.js LTS**:
+   - **Via Official Package**: Download and run the macOS `.pkg` installer from [nodejs.org](https://nodejs.org).
+   - **Via Homebrew** (alternative):
+     ```bash
+     # Install Homebrew if you don't have it
+     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+     
+     # Install Node.js
+     brew install node
+     ```
+4. Verify the installation:
+   ```bash
+   node -v
+   npm -v
+   git --version
+   ```
+
+---
+
+### 🐧 Linux (Ubuntu / Debian / Fedora / Arch)
+
+On a fresh Linux installation, open a terminal window:
+
+#### Ubuntu / Debian / Linux Mint:
 ```bash
-# 1. Clone the repository
+# 1. Update repository indices and install standard build tools & git
+sudo apt update
+sudo apt install -y curl git build-essential python3
+
+# 2. Install Node.js LTS (v20 or v22) via official NodeSource repository
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# 3. Verify versions
+node -v
+npm -v
+git --version
+```
+
+#### Fedora / RHEL:
+```bash
+sudo dnf install -y git gcc gcc-c++ make python3 nodejs
+```
+
+#### Arch Linux:
+```bash
+sudo pacman -Syu --noconfirm git base-devel nodejs npm
+```
+
+---
+
+## 🚀 Running AcademiaSync
+
+Once Git and Node.js are installed on your system:
+
+### Step 1: Get the Code
+
+#### Using Git (Terminal):
+```bash
 git clone https://github.com/skmdaarif/academiasync.git
 cd academiasync
+```
 
-# 2. Install dependencies
+#### Without Git (Download ZIP):
+1. Click the green **Code** button at the top of the GitHub repository page.
+2. Click **Download ZIP**.
+3. Extract the ZIP file into a folder on your computer (e.g. `Downloads/academiasync` or `Desktop/academiasync`).
+4. Open your terminal / Command Prompt inside that extracted folder.
+
+---
+
+### Step 2: Install Project Dependencies
+Run the following command in the project folder:
+```bash
 npm install
+```
+> [!NOTE]
+> This command downloads all required frontend packages (React 19, Vite, Tailwind CSS v4, Lucide icons) and backend modules (`better-sqlite3`, Express).
 
-# 3. Start the application
+---
+
+### Step 3: Launch the Development Server
+```bash
 npm run dev
 ```
 
-- Open **`http://localhost:5173`** in your browser.
-- The server will automatically initialize `./data/academiasync.db` with all tables, constraints, and indexes.
-- Click **"🚀 Try Demo Schedule"** on the welcome screen to test drive a preloaded college semester, or create your student profile. Everything saves automatically!
+This single command starts both:
+- **Backend API Server**: Runs on `http://localhost:5001` with the local SQLite database.
+- **Frontend Web Client**: Runs on `http://localhost:5173` with instant Hot Module Replacement (HMR).
 
 ---
 
-### Production Build & Single-Port Server
+### Step 4: Open in Your Browser
+Open your browser and navigate to:
+```
+http://localhost:5173
+```
 
-To build the client and serve everything from a single server port:
+- **Instant Demo**: Click **"🚀 Try Demo Schedule"** on the welcome screen to test drive a pre-populated semester with attendance records, timetable slots, assignments, and exams.
+- **Your Own Profile**: Click **"Create Profile"** to select your university, branch, degree, current semester, and semester start date.
+
+---
+
+## 🏗️ Production Build & Local Single-Port Server
+
+To create an optimized production build and serve the application and REST API together on a single port:
 
 ```bash
+# Build the production frontend bundle
 npm run build
+
+# Start the full-stack server
 npm start
 ```
-The application and REST API are served together at `http://localhost:5001`.
+The application will be live at **`http://localhost:5001`**.
 
 ---
 
-## 🖥️ Universal Native Desktop App (Tauri v2)
+## ✨ Key Features in v2.1.0
 
-AcademiaSync is also available as a **high-performance native desktop application** for macOS, Windows, and Linux, powered by [Tauri v2](https://v2.tauri.app) and sharing 100% of the React core and local SQLite database:
+### 1. 🔄 Day Order Swaps & Schedule Overrides
+- **Institutional Compensation Days**: Easily switch schedules when your college declares a weekend or holiday as a working day following another day's timetable (e.g. *"Running Tuesday's schedule on Saturday"*).
+- Configure overrides directly from the **Timetable Grid** using the **"Day Swap"** tool.
+- The **Live Lecture Hero** and **Daily Agenda** immediately adapt to the swapped day's classes while preserving the true calendar date.
 
-- **System Tray & Menu Bar Widget**: Resides in your OS menu bar / notification area for instant 1-click access to your daily classes.
-- **Native OS Alarms & Notifications**: Triggers native desktop notification banners 10 minutes prior to lecture start times.
-- **Ultra-Lightweight**: Uses the native OS webview engine, consuming under 30MB of RAM.
+### 2. ⚪ 3-Way Class Marking & Zero-Penalty Logging
+- Mark classes as **Present**, **Missed / Absent**, or **⚪ Not Conducted**.
+- **Not Conducted** handles sudden half-days, professor absences, strikes, or holidays—logging the event without reducing your safe bunk count or penalizing your percentage.
+
+### 3. ⚖️ Institutional OD / Excused Attendance Policies
+Configure how your university handles On-Duty (OD) / Medical Leave in **Profile Settings**:
+- **Exemption Mode** (UGC Standard): Excused classes are omitted from total lectures held, preventing penalties.
+- **Full Credit Mode** (SRM / Manipal / Amity): Excused classes count as both held and attended, boosting attendance.
+
+### 4. 🧮 Interactive "What-If" Bunk Simulator
+- Built into each course card in the **Attendance Calculator**.
+- Drag the **What-If Slider** (0 to 10 future absences) to preview exact percentage drops and see the exact number of consecutive classes required to recover to your target.
+
+### 5. 🎯 Semester Start Date Calibration & Countdown
+- Set your official semester start date during registration or in Settings.
+- If classes have not yet begun, the dashboard displays a live **`Classes Start in X Days`** countdown.
+
+### 6. 📝 Expanded Assessment Taxonomy
+- Schedule and track all university evaluation formats:
+  - **MTT** (Mid-Term Test)
+  - **ETT** (End-Term Theory)
+  - **CA** (Continuous Assessment / Internal Tests)
+  - **Quiz** (Surprise & Scheduled Quizzes)
+  - **Project** (Jury / Capstone Milestone)
+  - **Viva** (Oral / Practical Examination)
+  - **Backlog** (Re-sit / Improvement Exam)
+- Track syllabus unit completion, exam rooms, seat numbers, and sessions (Morning / Evening).
+
+### 7. 🔗 Direct LMS Submission Shortcuts
+- Attach assignment submission portal links (Moodle, Blackboard, Google Classroom, Canvas, or Google Drive) directly to tasks.
+- Launch your submission page in 1-click using the **`🔗 Submit on LMS`** button on task cards.
+
+### 8. 🏛️ Multi-Semester History & Academic Vault
+- Complete multi-semester transcript preservation—previous semesters are never overwritten.
+- Store official marksheet PDF / Google Drive links for verified grade records.
+- Track lifetime degree metrics: **Cumulative GPA (CGPA)**, **Total Credits Earned**, and **Average Attendance**.
+
+### 9. 📑 1-Click Timetable PDF Scanner
+- Upload your college schedule PDF (such as university ERP exports) to extract courses, faculty names, room numbers, and weekly slots in seconds using client-side `pdfjs-dist`.
+
+### 10. 🔒 10-Minute Campus Security Auto-Logout
+- Built-in inactivity watchdog protects your account if left unattended on public campus library or laboratory computers.
+
+---
+
+## 🖥️ Universal Desktop App (Tauri v2)
+
+AcademiaSync is also packaged as a native desktop application powered by [Tauri v2](https://v2.tauri.app):
 
 ```bash
 # Run the native desktop app in development
 npm run desktop:dev
 
-# Build native installers (.app and .dmg for macOS, .exe for Windows, .deb for Linux)
+# Build standalone native installers (.dmg on macOS, .exe on Windows, .deb on Linux)
 npm run desktop:build
 ```
+- Consumes under 30MB of RAM.
+- Integrated system tray icon and menu bar widget.
+- Native desktop notifications before upcoming lectures.
 
 ---
 
-## 📡 REST API Reference
+## 🔧 Common Troubleshooting (Fresh OS)
+
+### 1. `command not found: node` or `'node' is not recognized`
+- **Cause**: Node.js was just installed, but the open terminal has not refreshed its environment variables.
+- **Solution**: Completely close and re-open your terminal or command prompt. On Windows, verify that *"Add to PATH"* was selected during Node.js installation.
+
+### 2. Native Compilation Error during `npm install` (`better-sqlite3`)
+- **Cause**: Missing C/C++ compiler toolchain required to compile native database bindings.
+- **Solutions**:
+  - **Windows**: Run `npm install --global windows-build-tools` or install the C++ Desktop workload from Visual Studio Community Installer.
+  - **macOS**: Run `xcode-select --install` in Terminal.
+  - **Linux**: Run `sudo apt install build-essential python3` (Debian/Ubuntu) or `sudo dnf install gcc gcc-c++ make python3` (Fedora).
+
+### 3. Port `5001` or `5173` Already in Use
+- **Cause**: Another service or an earlier instance of AcademiaSync is occupying the port.
+- **Solution**:
+  - Stop any existing Node processes:
+    - **macOS / Linux**: `killall node` or `lsof -ti:5001 | xargs kill -9`
+    - **Windows**: `taskkill /F /IM node.exe`
+
+---
+
+## 📡 REST API Quick Reference
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | SQLite database connection health check |
-| `POST` | `/api/auth/register` | Register a new student profile |
+| `GET` | `/api/health` | SQLite database connection status & mode |
+| `POST` | `/api/auth/register` | Register student profile with start date and OD policy |
 | `POST` | `/api/auth/login` | Authenticate student and load credentials |
-| `GET` | `/api/data/:userId` | Fetch full student payload (courses, slots, tasks, attendance) |
-| `POST` | `/api/courses` | Add a new course/subject |
-| `PUT` | `/api/courses/:id` | Update existing course details or goals |
-| `DELETE` | `/api/courses/:id` | Delete a course and its associated slots |
-| `POST` | `/api/slots` | Add a timetable class slot |
-| `DELETE` | `/api/slots/:id` | Remove a timetable class slot |
-| `POST` | `/api/tasks` | Create a new task/assignment |
-| `PUT` | `/api/tasks/:id` | Update task status, priority, or subtasks |
-| `DELETE` | `/api/tasks/:id` | Delete a task |
-| `POST` | `/api/attendance` | Record an attendance event (`present`, `absent`, `cancelled`) |
-| `PUT` | `/api/profile/:id` | Update user profile and target criteria |
-| `POST` | `/api/reset/:id` | Wipe timetable data and reset back to clean state |
-
----
-
-## 🔒 Security & Auto-Logout
-
-AcademiaSync includes a built-in **10-minute inactivity watchdog** in [`src/App.tsx`](src/App.tsx). If no keyboard or mouse interactions are detected for 10 minutes, the session is cleared automatically from client storage to safeguard student privacy on shared campus library or lab computers.
+| `GET` | `/api/data/:userId` | Retrieve complete student profile, schedule, and vault |
+| `POST` | `/api/courses` | Create course with credit hours & baseline calibration |
+| `POST` | `/api/slots` | Add weekly timetable slot |
+| `POST` | `/api/attendance` | Record class status (`present`, `absent`, `cancelled`) |
+| `POST` | `/api/schedule-overrides` | Set day order override (e.g. running Tuesday on Saturday) |
+| `DELETE` | `/api/schedule-overrides/:id` | Remove a schedule override |
+| `POST` | `/api/exams` | Add exam with syllabus checklists and room details |
+| `POST` | `/api/tasks` | Create task with optional LMS submission link |
 
 ---
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome!
-1. Fork the Project.
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`).
-4. Push to the Branch (`git push origin feature/AmazingFeature`).
+1. Fork the repository.
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes (`git commit -m 'feat: Add some AmazingFeature'`).
+4. Push to the branch (`git push origin feature/AmazingFeature`).
 5. Open a Pull Request.
 
 ---
 
 ## 📄 License
 
-Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for more information.
-
----
+Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for details.
 
 <p align="center">
   Crafted with ❤️ for students worldwide.
