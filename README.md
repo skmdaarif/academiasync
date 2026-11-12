@@ -280,6 +280,7 @@ npm run desktop:build
 | `POST` | `/api/auth/register` | Register student profile with start date and OD policy |
 | `POST` | `/api/auth/login` | Authenticate student and load credentials |
 | `GET` | `/api/data/:userId` | Retrieve complete student profile, schedule, and vault |
+| `POST` | `/api/users/mid-sem-catchup` | Calibrate mid-semester baseline attendance, conducted exams & tasks |
 | `POST` | `/api/courses` | Create course with credit hours & baseline calibration |
 | `POST` | `/api/slots` | Add weekly timetable slot |
 | `POST` | `/api/attendance` | Record class status (`present`, `absent`, `cancelled`) |
