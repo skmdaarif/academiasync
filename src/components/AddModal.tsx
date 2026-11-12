@@ -11,7 +11,8 @@ import {
   SlotRecurrence,
   Exam,
   ExamCategory,
-  ExamType
+  ExamType,
+  UserAccount
 } from '../types';
 import { THEMES } from '../styles/themes';
 import { DAYS_ORDER, checkSlotOverlap, parseTimeToMinutes } from '../utils/timeUtils';
@@ -19,6 +20,7 @@ import { X, Plus, Calendar, CheckSquare, BookOpen, Trash2, AlertCircle, Flame, L
 
 interface AddModalProps {
   type: 'slot' | 'task' | 'course' | 'exam';
+  user?: UserAccount;
   state: StudentData;
   defaultTargetAttendance?: number;
   initialSlot?: TimeSlot | null;
@@ -44,6 +46,7 @@ const PRESET_COLORS = [
 
 export function AddModal({
   type,
+  user,
   state,
   defaultTargetAttendance,
   initialSlot,
@@ -110,9 +113,18 @@ export function AddModal({
   const [courseDriveLink, setCourseDriveLink] = useState('');
   const [courseProfEmail, setCourseProfEmail] = useState('');
   const [courseCabinRoom, setCourseCabinRoom] = useState('');
-  const [isMidSemester, setIsMidSemester] = useState(false);
-  const [pastTotalClasses, setPastTotalClasses] = useState(0);
-  const [pastAttendedClasses, setPastAttendedClasses] = useState(0);
+  const todayDateStr = new Date().toISOString().split('T')[0];
+  const isTermStartedInPast = Boolean(user?.semesterStartDate && user.semesterStartDate < todayDateStr);
+  const defaultInitialPct = user?.initialAttendancePct;
+
+  const [isMidSemester, setIsMidSemester] = useState(() => isTermStartedInPast && defaultInitialPct != null);
+  const [pastTotalClasses, setPastTotalClasses] = useState<number>(() => (isTermStartedInPast && defaultInitialPct != null ? 30 : 0));
+  const [pastAttendedClasses, setPastAttendedClasses] = useState<number>(() => {
+    if (isTermStartedInPast && defaultInitialPct != null) {
+      return Math.round(30 * (defaultInitialPct / 100));
+    }
+    return 0;
+  });
 
   // Live schedule collision check
   const liveSlotConflict = checkSlotOverlap(state.timeSlots, {
@@ -908,7 +920,14 @@ export function AddModal({
                     <input
                       type="checkbox"
                       checked={isMidSemester}
-                      onChange={(e) => setIsMidSemester(e.target.checked)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setIsMidSemester(checked);
+                        if (checked && pastTotalClasses === 0 && defaultInitialPct != null) {
+                          setPastTotalClasses(30);
+                          setPastAttendedClasses(Math.round(30 * (defaultInitialPct / 100)));
+                        }
+                      }}
                       className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
                     />
                     Starting Mid-Semester? (Enter Past Attendance)

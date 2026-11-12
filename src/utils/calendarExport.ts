@@ -16,11 +16,21 @@ export function generateTimetableICS(slots: TimeSlot[], courses: Course[], semes
     Sunday: 'SU',
   };
 
-  // Compute UNTIL date for semester boundary (default: 16 weeks from today)
+  // Compute UNTIL date for semester boundary (default: 16 weeks from today, or 18 weeks from start date)
   let untilDate: Date;
   if (semesterEndDate) {
     const [y, m, d] = semesterEndDate.split('-').map(Number);
-    untilDate = new Date(Date.UTC(y, m - 1, d, 23, 59, 59));
+    const parsedDate = new Date(Date.UTC(y, m - 1, d, 23, 59, 59));
+    const nowUtc = new Date();
+    // If the provided date is in the past (e.g. caller passed semesterStartDate),
+    // project forward 18 weeks from that start date, or at least 16 weeks from now.
+    if (parsedDate.getTime() < nowUtc.getTime()) {
+      const eighteenWeeksFromStart = new Date(parsedDate.getTime() + 18 * 7 * 24 * 60 * 60 * 1000);
+      const sixteenWeeksFromNow = new Date(nowUtc.getTime() + 16 * 7 * 24 * 60 * 60 * 1000);
+      untilDate = eighteenWeeksFromStart.getTime() > sixteenWeeksFromNow.getTime() ? eighteenWeeksFromStart : sixteenWeeksFromNow;
+    } else {
+      untilDate = parsedDate;
+    }
   } else {
     untilDate = new Date(Date.now() + 16 * 7 * 24 * 60 * 60 * 1000);
   }

@@ -37,6 +37,12 @@ export function AcademicVaultModal({
 }: AcademicVaultModalProps) {
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
+  const totalClasses = state.courses.reduce((acc, c) => acc + (c.totalClasses || 0) + (c.baselineClassesHeld || 0), 0);
+  const totalAttended = state.courses.reduce((acc, c) => acc + (c.attendedClasses || 0) + (c.baselineAttendedClasses || 0), 0);
+  const dynamicCurrentPct = totalClasses > 0 
+    ? Math.round((totalAttended / totalClasses) * 1000) / 10 
+    : (user.initialAttendancePct ?? 85);
+
   const semestersList = state.semesters && state.semesters.length > 0
     ? [...state.semesters].sort((a, b) => a.semesterNumber - b.semesterNumber)
     : [{
@@ -45,7 +51,7 @@ export function AcademicVaultModal({
         title: user.semester || `Semester ${user.activeSemesterNumber || 1}`,
         status: 'active' as const,
         creditsEarned: state.courses.reduce((acc, c) => acc + (c.credits || 3), 0),
-        finalAttendancePct: 85,
+        finalAttendancePct: dynamicCurrentPct,
       }];
 
   const [editingSemNumber, setEditingSemNumber] = useState<number | null>(null);

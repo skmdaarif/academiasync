@@ -203,6 +203,15 @@ export function AttendanceHistoryModal({
           </div>
         </div>
 
+        {state.courses.some(c => (c.baselineClassesHeld || 0) > 0) && (
+          <div className="mb-5 p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
+            <Info className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span>
+              Prior to joining, you have <strong className="text-white font-mono">{state.courses.reduce((acc, c) => acc + (c.baselineAttendedClasses || 0), 0)}/{state.courses.reduce((acc, c) => acc + (c.baselineClassesHeld || 0), 0)}</strong> classes in your college ERP baseline. The audit log below records daily class sessions tracked inside AcademiaSync.
+            </span>
+          </div>
+        )}
+
         {/* Actions & Filters Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-4 border-b border-white/10">
           <div className="flex items-center gap-2 flex-wrap">

@@ -209,6 +209,7 @@ export interface StudentData {
 
 export interface MidSemCatchupTask {
   title: string;
+  courseId?: string;
   courseCode?: string;
   dueDate: string;
   dueTime?: string;
@@ -219,6 +220,8 @@ export interface MidSemCatchupTask {
 
 export interface MidSemCatchupExam {
   title: string;
+  courseId?: string;
+  courseCode?: string;
   examCategory: ExamCategory;
   examType?: ExamType;
   examDate: string;
@@ -226,7 +229,6 @@ export interface MidSemCatchupExam {
   marksObtained?: number;
   isResultAwaiting?: boolean;
   resultStatus?: 'declared' | 'awaiting' | 'upcoming';
-  courseCode?: string;
   isCompleted?: boolean;
 }
 

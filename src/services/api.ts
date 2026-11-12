@@ -1131,6 +1131,7 @@ export async function apiApplyMidSemCatchup(
       data.tasks.push({
         id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         userId,
+        courseId: t.courseId || undefined,
         title: t.title.trim(),
         dueDate: t.dueDate || new Date().toISOString().split('T')[0],
         dueTime: t.dueTime || '23:59',
@@ -1148,6 +1149,7 @@ export async function apiApplyMidSemCatchup(
       data.tasks.push({
         id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         userId,
+        courseId: t.courseId || undefined,
         title: t.title.trim(),
         dueDate: t.dueDate || new Date().toISOString().split('T')[0],
         dueTime: t.dueTime || '23:59',
@@ -1168,6 +1170,7 @@ export async function apiApplyMidSemCatchup(
       data.exams.push({
         id: `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         userId,
+        courseId: e.courseId || undefined,
         title: e.title.trim(),
         examCategory: e.examCategory || 'mtt',
         examType: e.examType || 'theory',

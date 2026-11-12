@@ -111,9 +111,15 @@ export function ExamCountdownHub({
   const [newUnitInput, setNewUnitInput] = useState('');
 
   // Target Grade Calculator State
-  const [calculatorCourseId, setCalculatorCourseId] = useState<string>('');
+  const [calculatorCourseId, setCalculatorCourseId] = useState<string>(() => state.courses[0]?.id || '');
   const [targetDesiredGrade, setTargetDesiredGrade] = useState<number>(80); // 80% for A grade
   const [evaluationScheme, setEvaluationScheme] = useState<'50-50' | '40-60' | '30-70'>('50-50');
+
+  useEffect(() => {
+    if (!calculatorCourseId && state.courses.length > 0) {
+      setCalculatorCourseId(state.courses[0].id);
+    }
+  }, [state.courses, calculatorCourseId]);
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
@@ -431,9 +437,13 @@ export function ExamCountdownHub({
                   <h3 className="text-xl font-black tracking-tight" style={{ color: theme.textPrimary }}>
                     {exam.title}
                   </h3>
-                  {course && (
+                  {course ? (
                     <p className="text-xs text-slate-400 font-medium mt-0.5">
                       {course.name} {course.professor ? `• ${course.professor}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-400/90 font-medium mt-0.5 flex items-center gap-1">
+                      <span>⚠️ Unassigned subject — click Edit to link to course for CIE target calculation</span>
                     </p>
                   )}
 

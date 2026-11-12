@@ -10,6 +10,9 @@ export function getBlankStudentData(): StudentData {
     tasks: [],
     attendanceRecords: [],
     semesters: [],
+    exams: [],
+    holidays: [],
+    scheduleOverrides: [],
     activeSemesterNumber: 1,
     theme: 'dark-slate',
     activeView: 'dashboard',
@@ -24,7 +27,13 @@ export function importStateFromJSON(jsonString: string): StudentData | null {
   try {
     const parsed = JSON.parse(jsonString);
     if (parsed.data && Array.isArray(parsed.data.courses)) {
-      return parsed.data;
+      return {
+        ...parsed.data,
+        exams: parsed.data.exams || [],
+        holidays: parsed.data.holidays || [],
+        scheduleOverrides: parsed.data.scheduleOverrides || [],
+        semesters: parsed.data.semesters || [],
+      };
     }
     if (Array.isArray(parsed.courses)) {
       return {
@@ -32,6 +41,11 @@ export function importStateFromJSON(jsonString: string): StudentData | null {
         timeSlots: parsed.timeSlots || [],
         tasks: parsed.tasks || [],
         attendanceRecords: parsed.attendanceRecords || [],
+        semesters: parsed.semesters || [],
+        exams: parsed.exams || [],
+        holidays: parsed.holidays || [],
+        scheduleOverrides: parsed.scheduleOverrides || [],
+        activeSemesterNumber: parsed.activeSemesterNumber || 1,
         theme: parsed.theme || 'dark-slate',
         activeView: 'dashboard',
       };

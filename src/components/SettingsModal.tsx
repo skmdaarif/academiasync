@@ -338,6 +338,22 @@ export function SettingsModal({
                               }}
                               className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
                             />
+                            {state.courses.length > 0 && (
+                              <select
+                                value={t.courseId || ''}
+                                onChange={(e) => {
+                                  const updated = [...completedTasksList];
+                                  updated[idx].courseId = e.target.value || undefined;
+                                  setCompletedTasksList(updated);
+                                }}
+                                className="w-24 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
+                              >
+                                <option value="" className="bg-slate-900">Course</option>
+                                {state.courses.map((c) => (
+                                  <option key={c.id} value={c.id} className="bg-slate-900">{c.code}</option>
+                                ))}
+                              </select>
+                            )}
                             <button
                               type="button"
                               onClick={() => setCompletedTasksList(completedTasksList.filter((_, i) => i !== idx))}
@@ -420,6 +436,22 @@ export function SettingsModal({
                                 <option value="high" className="bg-slate-900">High</option>
                                 <option value="urgent" className="bg-slate-900">Urgent</option>
                               </select>
+                              {state.courses.length > 0 && (
+                                <select
+                                  value={t.courseId || ''}
+                                  onChange={(e) => {
+                                    const updated = [...pendingTasksList];
+                                    updated[idx].courseId = e.target.value || undefined;
+                                    setPendingTasksList(updated);
+                                  }}
+                                  className="w-24 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
+                                >
+                                  <option value="" className="bg-slate-900">Course</option>
+                                  {state.courses.map((c) => (
+                                    <option key={c.id} value={c.id} className="bg-slate-900">{c.code}</option>
+                                  ))}
+                                </select>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => setPendingTasksList(pendingTasksList.filter((_, i) => i !== idx))}
@@ -550,6 +582,22 @@ export function SettingsModal({
                               <option value="ett" className="bg-slate-900">ETT</option>
                               <option value="project" className="bg-slate-900">Project</option>
                             </select>
+                            {state.courses.length > 0 && (
+                              <select
+                                value={e.courseId || ''}
+                                onChange={(ev) => {
+                                  const updated = [...conductedExamsList];
+                                  updated[idx].courseId = ev.target.value || undefined;
+                                  setConductedExamsList(updated);
+                                }}
+                                className="w-24 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
+                              >
+                                <option value="" className="bg-slate-900">Course</option>
+                                {state.courses.map((c) => (
+                                  <option key={c.id} value={c.id} className="bg-slate-900">{c.code}</option>
+                                ))}
+                              </select>
+                            )}
                             <input
                               type="date"
                               value={e.examDate}

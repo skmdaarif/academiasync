@@ -2147,14 +2147,15 @@ app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
       if (Array.isArray(completedTasks) && completedTasks.length > 0) {
         const insertTask = db.prepare(`
           INSERT INTO tasks (
-            id, user_id, title, due_date, due_time, priority, status, category, semester_number, created_at
-          ) VALUES (?, ?, ?, ?, ?, 'medium', 'completed', 'assignment', ?, datetime('now'))
+            id, user_id, course_id, title, due_date, due_time, priority, status, category, semester_number, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'medium', 'completed', 'assignment', ?, datetime('now'))
         `);
         for (const t of completedTasks) {
           if (!t || !t.title) continue;
           insertTask.run(
             crypto.randomUUID(),
             userId,
+            t.courseId || null,
             t.title.trim(),
             t.dueDate || new Date().toISOString().split('T')[0],
             t.dueTime || '23:59',
@@ -2167,14 +2168,15 @@ app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
       if (Array.isArray(pendingTasks) && pendingTasks.length > 0) {
         const insertPending = db.prepare(`
           INSERT INTO tasks (
-            id, user_id, title, due_date, due_time, priority, status, category, submission_url, semester_number, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'assignment', ?, ?, datetime('now'))
+            id, user_id, course_id, title, due_date, due_time, priority, status, category, submission_url, semester_number, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'assignment', ?, ?, datetime('now'))
         `);
         for (const t of pendingTasks) {
           if (!t || !t.title) continue;
           insertPending.run(
             crypto.randomUUID(),
             userId,
+            t.courseId || null,
             t.title.trim(),
             t.dueDate || new Date().toISOString().split('T')[0],
             t.dueTime || '23:59',
@@ -2190,9 +2192,9 @@ app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
       if (Array.isArray(conductedExams) && conductedExams.length > 0) {
         const insertExam = db.prepare(`
           INSERT INTO exams (
-            id, user_id, title, exam_category, exam_type, exam_date,
+            id, user_id, course_id, title, exam_category, exam_type, exam_date,
             max_marks, marks_obtained, is_result_awaiting, semester_number, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
         `);
         for (const e of conductedExams) {
           if (!e || !e.title) continue;
@@ -2200,6 +2202,7 @@ app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
           insertExam.run(
             crypto.randomUUID(),
             userId,
+            e.courseId || null,
             e.title.trim(),
             e.examCategory || 'mtt',
             e.examType || 'theory',
@@ -2257,6 +2260,10 @@ app.delete('/api/users/:id', requireAuth, (req, res) => {
       db.prepare('DELETE FROM attendance_records WHERE user_id = ?').run(id);
       db.prepare('DELETE FROM tasks WHERE user_id = ?').run(id);
       db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM exams WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM academic_holidays WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM schedule_overrides WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM academic_semesters WHERE user_id = ?').run(id);
       db.prepare('DELETE FROM courses WHERE user_id = ?').run(id);
       db.prepare('DELETE FROM users WHERE id = ?').run(id);
     });

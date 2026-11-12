@@ -1091,6 +1091,7 @@ export function App() {
       {(addModalType || editingSlot) && (
         <AddModal
           type={addModalType || 'slot'}
+          user={currentUser}
           initialSlot={editingSlot}
           state={viewState}
           defaultTargetAttendance={currentUser.personalGoalAttendance || currentUser.collegeMinAttendance || 75}
