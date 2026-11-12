@@ -105,6 +105,7 @@ export function ExamCountdownHub({
   const [formSession, setFormSession] = useState<'morning' | 'afternoon'>('morning');
   const [formMaxMarks, setFormMaxMarks] = useState<string>('50');
   const [formMarksObtained, setFormMarksObtained] = useState<string>('');
+  const [formIsResultAwaiting, setFormIsResultAwaiting] = useState<boolean>(false);
   const [formNotes, setFormNotes] = useState('');
   const [formUnits, setFormUnits] = useState<{ id: string; title: string; completed: boolean }[]>([]);
   const [newUnitInput, setNewUnitInput] = useState('');
@@ -151,6 +152,7 @@ export function ExamCountdownHub({
     setFormSession('morning');
     setFormMaxMarks('50');
     setFormMarksObtained('');
+    setFormIsResultAwaiting(false);
     setFormNotes('');
     setFormUnits([
       { id: '1', title: 'Unit 1: Fundamentals', completed: false },
@@ -173,6 +175,7 @@ export function ExamCountdownHub({
     setFormSession(exam.session || 'morning');
     setFormMaxMarks(exam.maxMarks !== undefined && exam.maxMarks !== null ? String(exam.maxMarks) : '');
     setFormMarksObtained(exam.marksObtained !== undefined && exam.marksObtained !== null ? String(exam.marksObtained) : '');
+    setFormIsResultAwaiting(Boolean(exam.isResultAwaiting));
     setFormNotes(exam.notes || '');
     setFormUnits(exam.syllabusUnits ? [...exam.syllabusUnits] : []);
     setIsAddModalOpen(true);
@@ -183,7 +186,7 @@ export function ExamCountdownHub({
     if (!formTitle.trim()) return;
 
     const parsedMax = formMaxMarks ? parseFloat(formMaxMarks) : undefined;
-    const parsedObtained = formMarksObtained ? parseFloat(formMarksObtained) : undefined;
+    const parsedObtained = !formIsResultAwaiting && formMarksObtained ? parseFloat(formMarksObtained) : undefined;
 
     if (editingExam && onUpdateExam) {
       onUpdateExam({
@@ -200,6 +203,7 @@ export function ExamCountdownHub({
         session: formSession,
         maxMarks: parsedMax,
         marksObtained: parsedObtained,
+        isResultAwaiting: formIsResultAwaiting,
         syllabusUnits: formUnits,
         notes: formNotes.trim() || undefined,
       });
@@ -217,6 +221,7 @@ export function ExamCountdownHub({
         session: formSession,
         maxMarks: parsedMax,
         marksObtained: parsedObtained,
+        isResultAwaiting: formIsResultAwaiting,
         syllabusUnits: formUnits,
         notes: formNotes.trim() || undefined,
         semesterNumber: state.activeSemesterNumber || 1,
@@ -464,17 +469,34 @@ export function ExamCountdownHub({
 
                   {/* Live Precision Countdown Box */}
                   <div className="mt-4 p-4 rounded-2xl bg-white/5 border border-white/5">
-                    {timeLeft.isPast ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                          <CheckCircle2 className="w-4 h-4" />
-                          Exam Concluded
+                    {timeLeft.isPast || exam.isResultAwaiting ? (
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 font-bold text-xs">
+                          {exam.isResultAwaiting ? (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              Conducted • Results Awaiting
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-emerald-400">
+                              <CheckCircle2 className="w-4 h-4" />
+                              Exam Concluded
+                            </span>
+                          )}
                         </div>
-                        {exam.marksObtained !== undefined && exam.marksObtained !== null && exam.maxMarks && (
+                        {exam.isResultAwaiting ? (
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(exam)}
+                            className="px-2.5 py-1 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-xs font-bold border border-indigo-500/30 transition-all flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Enter Declared Marks
+                          </button>
+                        ) : exam.marksObtained !== undefined && exam.marksObtained !== null && exam.maxMarks ? (
                           <div className="text-xs font-mono font-bold text-amber-400">
                             Score: {exam.marksObtained} / {exam.maxMarks} ({Math.round((exam.marksObtained / exam.maxMarks) * 100)}%)
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     ) : (
                       <div>
@@ -718,15 +740,19 @@ export function ExamCountdownHub({
               }
 
               const courseExams = nativeExams.filter((e) => e.courseId === calculatorCourseId);
-              // Internal evaluations are MTT, CA, Viva
-              const internalExams = courseExams.filter(
-                (e) => e.marksObtained !== undefined && e.maxMarks && e.examCategory !== 'ett'
+              // Internal evaluations are MTT, CA, Viva, Quiz, Project
+              const declaredExams = courseExams.filter(
+                (e) => !e.isResultAwaiting && e.marksObtained !== undefined && e.marksObtained !== null && e.maxMarks && e.examCategory !== 'ett'
+              );
+              const awaitingExams = courseExams.filter(
+                (e) => (e.isResultAwaiting || e.marksObtained === undefined || e.marksObtained === null) && e.maxMarks && e.examCategory !== 'ett'
               );
 
-              const totalMax = internalExams.reduce((acc, e) => acc + (e.maxMarks || 0), 0);
-              const totalObtained = internalExams.reduce((acc, e) => acc + (e.marksObtained || 0), 0);
+              const totalMax = declaredExams.reduce((acc, e) => acc + (e.maxMarks || 0), 0);
+              const totalObtained = declaredExams.reduce((acc, e) => acc + (e.marksObtained || 0), 0);
+              const awaitingMax = awaitingExams.reduce((acc, e) => acc + (e.maxMarks || 0), 0);
 
-              if (totalMax === 0) {
+              if (totalMax === 0 && awaitingMax === 0) {
                 return (
                   <p className="text-xs text-slate-300 text-center">
                     No scored internal assessments yet. Aim for {targetDesiredGrade}% on all upcoming tests!
@@ -736,7 +762,7 @@ export function ExamCountdownHub({
 
               // Scheme weights
               const [cieWeight, seeWeight] = evaluationScheme.split('-').map(Number);
-              const ciePct = (totalObtained / totalMax) * 100;
+              const ciePct = totalMax > 0 ? (totalObtained / totalMax) * 100 : 0;
               const internalContributed = (ciePct * cieWeight) / 100;
               const marksNeededInSeeScale = Math.max(0, targetDesiredGrade - internalContributed);
               const seePctRequired = Math.min(100, (marksNeededInSeeScale / seeWeight) * 100);
@@ -747,9 +773,15 @@ export function ExamCountdownHub({
               return (
                 <div className="space-y-1">
                   <div className="flex justify-between items-center text-xs font-bold text-white mb-0.5">
-                    <span>CIE Score: {totalObtained}/{totalMax} ({Math.round(ciePct)}%)</span>
+                    <span>CIE Declared: {totalObtained}/{totalMax} ({totalMax > 0 ? Math.round(ciePct) : 0}%)</span>
                     <span className="text-amber-400">Target: {targetDesiredGrade}%</span>
                   </div>
+                  {awaitingExams.length > 0 && (
+                    <div className="text-[10px] text-amber-300 font-semibold flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-amber-400" />
+                      {awaitingExams.length} internal {awaitingExams.length === 1 ? 'assessment' : 'assessments'} awaiting results ({awaitingMax} pts pending)
+                    </div>
+                  )}
                   <div className="text-[11px] text-indigo-300">
                     Scheme: {evaluationScheme} • Contributes {internalContributed.toFixed(1)} / {cieWeight} pts
                   </div>
@@ -971,17 +1003,37 @@ export function ExamCountdownHub({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Marks Obtained (if graded)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 42"
-                    value={formMarksObtained}
-                    onChange={(e) => setFormMarksObtained(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-mono focus:outline-none"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Marks Obtained
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFormIsResultAwaiting(!formIsResultAwaiting)}
+                      className={`text-[10px] px-2 py-0.5 rounded-lg font-bold border transition-all ${
+                        formIsResultAwaiting
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}
+                    >
+                      {formIsResultAwaiting ? '⏳ Results Awaiting' : '✅ Marks Declared'}
+                    </button>
+                  </div>
+                  {formIsResultAwaiting ? (
+                    <div className="w-full px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-1.5 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      Paper submitted • Marks awaiting declaration
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 42"
+                      value={formMarksObtained}
+                      onChange={(e) => setFormMarksObtained(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-mono focus:outline-none"
+                    />
+                  )}
                 </div>
               </div>
 

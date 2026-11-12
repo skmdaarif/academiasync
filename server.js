@@ -235,6 +235,7 @@ ensureColumn('attendance_records', 'document_ref', 'TEXT');
 ensureColumn('attendance_records', 'periods_count', 'INTEGER DEFAULT 1');
 ensureColumn('exams', 'seat_number', 'TEXT');
 ensureColumn('exams', 'session', "TEXT DEFAULT 'morning'");
+ensureColumn('exams', 'is_result_awaiting', 'INTEGER DEFAULT 0');
 
 console.log('✅ SQLite relational schema, multi-semester tables, exams, holidays & migrations verified.');
 
@@ -410,7 +411,9 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
            room_or_lab as roomOrLab, seat_number as seatNumber,
            COALESCE(session, 'morning') as session,
            max_marks as maxMarks,
-           marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+           marks_obtained as marksObtained,
+           COALESCE(is_result_awaiting, 0) as isResultAwaiting,
+           syllabus_units as syllabusUnitsRaw,
            COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
     FROM exams
     WHERE user_id = ?
@@ -426,8 +429,8 @@ function fetchFullStudentData(userId, defaultTheme = 'dark-slate') {
         syllabusUnits = [];
       }
     }
-    const { syllabusUnitsRaw, ...rest } = ex;
-    return { ...rest, syllabusUnits };
+    const { syllabusUnitsRaw, isResultAwaiting, ...rest } = ex;
+    return { ...rest, isResultAwaiting: Boolean(isResultAwaiting), syllabusUnits };
   });
 
   const holidays = db.prepare(`
@@ -647,11 +650,12 @@ app.post('/api/auth/register', async (req, res) => {
           const insertExam = db.prepare(`
             INSERT INTO exams (
               id, user_id, title, exam_category, exam_type, exam_date,
-              max_marks, marks_obtained, semester_number, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
+              max_marks, marks_obtained, is_result_awaiting, semester_number, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
           `);
           for (const e of conductedExams) {
             if (!e || !e.title) continue;
+            const isAwaiting = Boolean(e.isResultAwaiting);
             insertExam.run(
               crypto.randomUUID(),
               userId,
@@ -660,7 +664,8 @@ app.post('/api/auth/register', async (req, res) => {
               e.examType || 'theory',
               e.examDate || new Date().toISOString().split('T')[0],
               e.maxMarks != null ? Number(e.maxMarks) : null,
-              e.marksObtained != null ? Number(e.marksObtained) : null,
+              !isAwaiting && e.marksObtained != null ? Number(e.marksObtained) : null,
+              isAwaiting ? 1 : 0,
               activeSemNumber
             );
           }
@@ -1711,6 +1716,7 @@ app.post('/api/exams', requireAuth, (req, res) => {
       session,
       maxMarks,
       marksObtained,
+      isResultAwaiting,
       syllabusUnits,
       semesterNumber,
       notes,
@@ -1722,13 +1728,14 @@ app.post('/api/exams', requireAuth, (req, res) => {
     const examId = crypto.randomUUID();
 
     const syllabusJson = Array.isArray(syllabusUnits) ? JSON.stringify(syllabusUnits) : null;
+    const awaitingFlag = isResultAwaiting ? 1 : 0;
 
     db.prepare(`
       INSERT INTO exams (
         id, user_id, course_id, title, exam_category, exam_type, exam_date,
         start_time, end_time, room_or_lab, seat_number, session, max_marks, marks_obtained,
-        syllabus_units, semester_number, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_result_awaiting, syllabus_units, semester_number, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       examId,
       effectiveUserId,
@@ -1743,7 +1750,8 @@ app.post('/api/exams', requireAuth, (req, res) => {
       seatNumber || null,
       session || 'morning',
       maxMarks !== undefined && maxMarks !== '' ? Number(maxMarks) : null,
-      marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : null,
+      !awaitingFlag && marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : null,
+      awaitingFlag,
       syllabusJson,
       semNumber,
       notes || null
@@ -1756,7 +1764,9 @@ app.post('/api/exams', requireAuth, (req, res) => {
              room_or_lab as roomOrLab, seat_number as seatNumber,
              COALESCE(session, 'morning') as session,
              max_marks as maxMarks,
-             marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+             marks_obtained as marksObtained,
+             COALESCE(is_result_awaiting, 0) as isResultAwaiting,
+             syllabus_units as syllabusUnitsRaw,
              COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
       FROM exams WHERE id = ?
     `).get(examId);
@@ -1770,6 +1780,7 @@ app.post('/api/exams', requireAuth, (req, res) => {
       }
     }
     delete created.syllabusUnitsRaw;
+    created.isResultAwaiting = Boolean(created.isResultAwaiting);
     created.syllabusUnits = parsedUnits;
 
     res.status(201).json(created);
@@ -1795,6 +1806,7 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
       session,
       maxMarks,
       marksObtained,
+      isResultAwaiting,
       syllabusUnits,
       notes,
     } = req.body;
@@ -1807,6 +1819,10 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
     const syllabusJson = Array.isArray(syllabusUnits)
       ? JSON.stringify(syllabusUnits)
       : existing.syllabus_units;
+
+    const awaitingFlag = isResultAwaiting !== undefined
+      ? (isResultAwaiting ? 1 : 0)
+      : (marksObtained !== undefined && marksObtained !== '' ? 0 : existing.is_result_awaiting);
 
     db.prepare(`
       UPDATE exams
@@ -1822,6 +1838,7 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
           session = COALESCE(?, session),
           max_marks = ?,
           marks_obtained = ?,
+          is_result_awaiting = ?,
           syllabus_units = ?,
           notes = ?
       WHERE id = ? AND user_id = ?
@@ -1837,7 +1854,8 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
       seatNumber !== undefined ? seatNumber : existing.seat_number,
       session || null,
       maxMarks !== undefined && maxMarks !== '' ? Number(maxMarks) : existing.max_marks,
-      marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : existing.marks_obtained,
+      awaitingFlag ? null : (marksObtained !== undefined && marksObtained !== '' ? Number(marksObtained) : existing.marks_obtained),
+      awaitingFlag,
       syllabusJson,
       notes !== undefined ? notes : existing.notes,
       id,
@@ -1851,7 +1869,9 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
              room_or_lab as roomOrLab, seat_number as seatNumber,
              COALESCE(session, 'morning') as session,
              max_marks as maxMarks,
-             marks_obtained as marksObtained, syllabus_units as syllabusUnitsRaw,
+             marks_obtained as marksObtained,
+             COALESCE(is_result_awaiting, 0) as isResultAwaiting,
+             syllabus_units as syllabusUnitsRaw,
              COALESCE(semester_number, 1) as semesterNumber, notes, created_at as createdAt
       FROM exams WHERE id = ?
     `).get(id);
@@ -1865,6 +1885,7 @@ app.put('/api/exams/:id', requireAuth, (req, res) => {
       }
     }
     delete updated.syllabusUnitsRaw;
+    updated.isResultAwaiting = Boolean(updated.isResultAwaiting);
     updated.syllabusUnits = parsedUnits;
 
     res.json(updated);
@@ -2170,11 +2191,12 @@ app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
         const insertExam = db.prepare(`
           INSERT INTO exams (
             id, user_id, title, exam_category, exam_type, exam_date,
-            max_marks, marks_obtained, semester_number, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
+            max_marks, marks_obtained, is_result_awaiting, semester_number, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Conducted prior to onboarding')
         `);
         for (const e of conductedExams) {
           if (!e || !e.title) continue;
+          const isAwaiting = Boolean(e.isResultAwaiting);
           insertExam.run(
             crypto.randomUUID(),
             userId,
@@ -2183,7 +2205,8 @@ app.post('/api/users/mid-sem-catchup', requireAuth, (req, res) => {
             e.examType || 'theory',
             e.examDate || new Date().toISOString().split('T')[0],
             e.maxMarks != null ? Number(e.maxMarks) : null,
-            e.marksObtained != null ? Number(e.marksObtained) : null,
+            !isAwaiting && e.marksObtained != null ? Number(e.marksObtained) : null,
+            isAwaiting ? 1 : 0,
             activeSemNumber
           );
         }

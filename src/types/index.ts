@@ -156,6 +156,8 @@ export interface Exam {
   session?: 'morning' | 'afternoon';
   maxMarks?: number;
   marksObtained?: number;
+  isResultAwaiting?: boolean; // Exam conducted, paper submitted, but marks pending declaration
+  resultStatus?: 'declared' | 'awaiting' | 'upcoming';
   syllabusUnits?: SyllabusUnit[];
   semesterNumber?: number;
   notes?: string;
@@ -222,6 +224,8 @@ export interface MidSemCatchupExam {
   examDate: string;
   maxMarks?: number;
   marksObtained?: number;
+  isResultAwaiting?: boolean;
+  resultStatus?: 'declared' | 'awaiting' | 'upcoming';
   courseCode?: string;
   isCompleted?: boolean;
 }

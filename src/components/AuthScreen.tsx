@@ -780,29 +780,35 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
 
                       {/* Question 4: Already Conducted Exams / Tests */}
                       <div>
-                        <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                           <label className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
                             <FileText className="w-3.5 h-3.5 text-cyan-400" />
                             4. Which exams have already been conducted?
+                            {conductedExamsList.length > 0 && (
+                              <span className="text-[10px] text-amber-300/80 font-normal">
+                                ({conductedExamsList.filter(e => !e.isResultAwaiting && e.marksObtained != null).length} declared, {conductedExamsList.filter(e => e.isResultAwaiting || e.marksObtained == null).length} awaiting)
+                              </span>
+                            )}
                           </label>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 flex-wrap">
                             <button
                               type="button"
                               onClick={() => {
                                 setConductedExamsList([
                                   ...conductedExamsList,
                                   {
-                                    title: `MTT ${conductedExamsList.filter(e => e.examCategory === 'mtt').length + 1}`,
-                                    examCategory: 'mtt',
+                                    title: `CA ${conductedExamsList.filter(e => e.examCategory === 'ca').length + 1}`,
+                                    examCategory: 'ca',
                                     examDate: semesterStartDate,
-                                    maxMarks: 30,
-                                    marksObtained: 24,
+                                    maxMarks: 20,
+                                    marksObtained: 18,
+                                    isResultAwaiting: false,
                                   },
                                 ]);
                               }}
-                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-semibold"
+                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold"
                             >
-                              <Plus className="w-3 h-3" /> Add MTT
+                              <Plus className="w-3 h-3" /> + Declared CA
                             </button>
                             <button
                               type="button"
@@ -814,26 +820,45 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                     examCategory: 'ca',
                                     examDate: semesterStartDate,
                                     maxMarks: 20,
-                                    marksObtained: 17,
+                                    isResultAwaiting: true,
                                   },
                                 ]);
                               }}
-                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold"
+                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold"
                             >
-                              <Plus className="w-3 h-3" /> Add CA
+                              <Plus className="w-3 h-3" /> + ⏳ Awaiting CA
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConductedExamsList([
+                                  ...conductedExamsList,
+                                  {
+                                    title: `MTT ${conductedExamsList.filter(e => e.examCategory === 'mtt').length + 1}`,
+                                    examCategory: 'mtt',
+                                    examDate: semesterStartDate,
+                                    maxMarks: 30,
+                                    marksObtained: 24,
+                                    isResultAwaiting: false,
+                                  },
+                                ]);
+                              }}
+                              className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-semibold"
+                            >
+                              <Plus className="w-3 h-3" /> + MTT
                             </button>
                           </div>
                         </div>
 
                         {conductedExamsList.length === 0 ? (
-                          <p className="text-[10px] text-slate-400 italic">None added yet. Click above to log past MTTs, CAs, Quizzes, or Vivas with marks obtained.</p>
+                          <p className="text-[10px] text-slate-400 italic">None added yet. Click above to log past MTTs, CAs, Quizzes, or Vivas with marks obtained or pending.</p>
                         ) : (
                           <div className="space-y-1.5">
                             {conductedExamsList.map((e, idx) => (
                               <div key={idx} className="flex items-center gap-1.5 bg-black/30 p-2 rounded-lg border border-white/5">
                                 <input
                                   type="text"
-                                  placeholder="e.g. Mid-Term Test 1"
+                                  placeholder="e.g. CA 1"
                                   value={e.title}
                                   onChange={(ev) => {
                                     const updated = [...conductedExamsList];
@@ -868,19 +893,47 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                   }}
                                   className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
                                 />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...conductedExamsList];
+                                    const nextState = !updated[idx].isResultAwaiting;
+                                    updated[idx].isResultAwaiting = nextState;
+                                    if (nextState) {
+                                      updated[idx].marksObtained = undefined;
+                                    } else if (updated[idx].marksObtained === undefined) {
+                                      updated[idx].marksObtained = Math.round((updated[idx].maxMarks || 20) * 0.85);
+                                    }
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                                    e.isResultAwaiting
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  }`}
+                                  title="Toggle whether marks have been declared by faculty"
+                                >
+                                  {e.isResultAwaiting ? '⏳ Awaiting' : '✅ Declared'}
+                                </button>
                                 <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    placeholder="Marks"
-                                    value={e.marksObtained ?? ''}
-                                    onChange={(ev) => {
-                                      const updated = [...conductedExamsList];
-                                      updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
-                                      setConductedExamsList(updated);
-                                    }}
-                                    className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
-                                  />
-                                  <span className="text-slate-400 text-xs">/</span>
+                                  {!e.isResultAwaiting ? (
+                                    <>
+                                      <input
+                                        type="number"
+                                        placeholder="Marks"
+                                        value={e.marksObtained ?? ''}
+                                        onChange={(ev) => {
+                                          const updated = [...conductedExamsList];
+                                          updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
+                                          setConductedExamsList(updated);
+                                        }}
+                                        className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
+                                      />
+                                      <span className="text-slate-400 text-xs">/</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-[10px] text-amber-400 font-mono px-1">Max:</span>
+                                  )}
                                   <input
                                     type="number"
                                     placeholder="Max"

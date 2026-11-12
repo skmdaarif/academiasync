@@ -235,6 +235,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     if (payload.midSemCatchup.conductedExams?.length) {
       if (!blankData.exams) blankData.exams = [];
       for (const e of payload.midSemCatchup.conductedExams) {
+        const isAwaiting = Boolean(e.isResultAwaiting);
         blankData.exams.push({
           id: `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           userId: localId,
@@ -243,7 +244,8 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
           examType: e.examType || 'theory',
           examDate: e.examDate || new Date().toISOString().split('T')[0],
           maxMarks: e.maxMarks,
-          marksObtained: e.marksObtained,
+          marksObtained: !isAwaiting ? e.marksObtained : undefined,
+          isResultAwaiting: isAwaiting,
           semesterNumber: parsedSem,
           notes: 'Conducted prior to onboarding',
           createdAt: new Date().toISOString(),
@@ -1162,6 +1164,7 @@ export async function apiApplyMidSemCatchup(
   if (catchup.conductedExams?.length) {
     if (!data.exams) data.exams = [];
     for (const e of catchup.conductedExams) {
+      const isAwaiting = Boolean(e.isResultAwaiting);
       data.exams.push({
         id: `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         userId,
@@ -1170,7 +1173,8 @@ export async function apiApplyMidSemCatchup(
         examType: e.examType || 'theory',
         examDate: e.examDate || new Date().toISOString().split('T')[0],
         maxMarks: e.maxMarks,
-        marksObtained: e.marksObtained,
+        marksObtained: !isAwaiting ? e.marksObtained : undefined,
+        isResultAwaiting: isAwaiting,
         semesterNumber: activeSem,
         notes: 'Conducted prior to onboarding',
         createdAt: new Date().toISOString(),
