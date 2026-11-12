@@ -94,6 +94,9 @@ export function AddModal({
   const [examSeatNumber, setExamSeatNumber] = useState('');
   const [examSession, setExamSession] = useState<'morning' | 'afternoon'>('morning');
   const [examMaxMarks, setExamMaxMarks] = useState<number>(100);
+  const [examIsConducted, setExamIsConducted] = useState(false);
+  const [examIsResultAwaiting, setExamIsResultAwaiting] = useState(false);
+  const [examMarksObtained, setExamMarksObtained] = useState('');
 
   // Course Form State
   const [courseCode, setCourseCode] = useState('');
@@ -254,6 +257,9 @@ export function AddModal({
         seatNumber: examSeatNumber.trim() || undefined,
         session: examSession,
         maxMarks: examMaxMarks || 100,
+        marksObtained: examIsConducted && !examIsResultAwaiting && examMarksObtained ? parseFloat(examMarksObtained) : undefined,
+        isResultAwaiting: examIsConducted && examIsResultAwaiting,
+        semesterNumber: state.activeSemesterNumber || 1,
       });
     }
     onClose();
@@ -1158,6 +1164,68 @@ export function AddModal({
                 onChange={(e) => setExamMaxMarks(parseInt(e.target.value, 10) || 100)}
                 className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
               />
+            </div>
+
+            {/* Conducted & Results Status Section */}
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-200">
+                    Has this exam already been conducted?
+                  </span>
+                  <p className="text-[10px] text-slate-400">
+                    Enable if adding a past or already completed evaluation.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={examIsConducted || examDate < new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setExamIsConducted(e.target.checked)}
+                  className="w-4 h-4 rounded text-rose-500 focus:ring-rose-500"
+                />
+              </div>
+
+              {(examIsConducted || examDate < new Date().toISOString().split('T')[0]) && (
+                <div className="pt-2 border-t border-white/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Result Status
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setExamIsResultAwaiting(!examIsResultAwaiting)}
+                      className={`text-[10px] px-2 py-0.5 rounded-lg font-bold border transition-all ${
+                        examIsResultAwaiting
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}
+                    >
+                      {examIsResultAwaiting ? '⏳ Results Awaiting' : '✅ Marks Declared'}
+                    </button>
+                  </div>
+
+                  {examIsResultAwaiting ? (
+                    <p className="text-[11px] text-amber-300 bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
+                      Paper submitted • Marks are pending declaration by faculty.
+                    </p>
+                  ) : (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Marks Obtained
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={examMaxMarks}
+                        placeholder={`e.g. 42 (out of ${examMaxMarks})`}
+                        value={examMarksObtained}
+                        onChange={(e) => setExamMarksObtained(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 pt-3">
