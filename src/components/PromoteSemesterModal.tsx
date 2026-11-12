@@ -32,9 +32,11 @@ export function PromoteSemesterModal({
   );
 
   // Compute stats for current semester
-  const totalClassesHeld = currentSemesterCourses.reduce((acc, c) => acc + (c.totalClasses || 0), 0);
-  const totalClassesAttended = currentSemesterCourses.reduce((acc, c) => acc + (c.attendedClasses || 0), 0);
-  const calculatedAttendancePct = totalClassesHeld > 0 ? (totalClassesAttended / totalClassesHeld) * 100 : 85;
+  const totalClassesHeld = currentSemesterCourses.reduce((acc, c) => acc + (c.totalClasses || 0) + (c.baselineClassesHeld || 0), 0);
+  const totalClassesAttended = currentSemesterCourses.reduce((acc, c) => acc + (c.attendedClasses || 0) + (c.baselineAttendedClasses || 0), 0);
+  const calculatedAttendancePct = totalClassesHeld > 0 
+    ? (totalClassesAttended / totalClassesHeld) * 100 
+    : (user.initialAttendancePct !== undefined ? user.initialAttendancePct : 85);
   const calculatedCredits = currentSemesterCourses.reduce((acc, c) => acc + (c.credits || 3), 0);
 
   const [finalAttendancePct, setFinalAttendancePct] = useState(parseFloat(calculatedAttendancePct.toFixed(1)));

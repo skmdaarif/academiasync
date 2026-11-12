@@ -232,8 +232,8 @@ export function AddModal({
       driveFolderLink: courseDriveLink.trim() || undefined,
       professorEmail: courseProfEmail.trim() || undefined,
       cabinRoom: courseCabinRoom.trim() || undefined,
-      totalClasses: totalHeld,
-      attendedClasses: attended,
+      totalClasses: 0,
+      attendedClasses: 0,
       baselineClassesHeld: totalHeld,
       baselineAttendedClasses: attended,
     });

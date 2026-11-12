@@ -121,9 +121,11 @@ export function AttendanceCalculator({
   }
 
   // Overall attendance calculation
-  const totalClasses = state.courses.reduce((acc, c) => acc + (c.totalClasses || 0), 0);
-  const totalAttended = state.courses.reduce((acc, c) => acc + (c.attendedClasses || 0), 0);
-  const overallPercentage = totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 1000) / 10 : 100;
+  const totalClasses = state.courses.reduce((acc, c) => acc + (c.totalClasses || 0) + (c.baselineClassesHeld || 0), 0);
+  const totalAttended = state.courses.reduce((acc, c) => acc + (c.attendedClasses || 0) + (c.baselineAttendedClasses || 0), 0);
+  const overallPercentage = totalClasses > 0 
+    ? Math.round((totalAttended / totalClasses) * 1000) / 10 
+    : (user.initialAttendancePct !== undefined ? user.initialAttendancePct : 100);
   
   const isCollegeSafe = overallPercentage >= collegeMin;
   const isPersonalGoalMet = overallPercentage >= personalGoal;

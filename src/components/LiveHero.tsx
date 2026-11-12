@@ -103,9 +103,11 @@ export function LiveHero({
   // Overall attendance calculation
   const collegeMin = user.collegeMinAttendance || user.targetAttendance || 75;
   const personalGoal = user.personalGoalAttendance || collegeMin;
-  const totalClasses = state.courses.reduce((acc, c) => acc + (c.totalClasses || 0), 0);
-  const totalAttended = state.courses.reduce((acc, c) => acc + (c.attendedClasses || 0), 0);
-  const overallPercentage = totalClasses > 0 ? Math.round((totalAttended / totalClasses) * 1000) / 10 : 100;
+  const totalClasses = state.courses.reduce((acc, c) => acc + (c.totalClasses || 0) + (c.baselineClassesHeld || 0), 0);
+  const totalAttended = state.courses.reduce((acc, c) => acc + (c.attendedClasses || 0) + (c.baselineAttendedClasses || 0), 0);
+  const overallPercentage = totalClasses > 0 
+    ? Math.round((totalAttended / totalClasses) * 1000) / 10 
+    : (user.initialAttendancePct !== undefined ? user.initialAttendancePct : 100);
   const isOverallSafe = overallPercentage >= personalGoal;
 
   const handleQuickPresent = (courseId: string) => {
@@ -443,7 +445,7 @@ export function LiveHero({
                   {calculateAttendance(status.currentCourse, collegeMin, personalGoal).percentage}%
                 </span>
                 <span className="text-slate-400 ml-1">
-                  ({status.currentCourse.attendedClasses}/{status.currentCourse.totalClasses} attended)
+                  ({(status.currentCourse.attendedClasses || 0) + (status.currentCourse.baselineAttendedClasses || 0)}/{(status.currentCourse.totalClasses || 0) + (status.currentCourse.baselineClassesHeld || 0)} attended)
                 </span>
               </div>
 
