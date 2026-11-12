@@ -223,6 +223,18 @@ export function SettingsModal({
                 className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
               />
             </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Tentative Classes End Date
+              </label>
+              <input
+                type="date"
+                value={formData.classesEndDate ? formData.classesEndDate.split('T')[0] : ''}
+                onChange={(e) => setFormData({ ...formData, classesEndDate: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+              />
+            </div>
           </div>
 
           {/* Mid-Semester Catch-Up / Calibration Section */}

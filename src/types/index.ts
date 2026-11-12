@@ -37,6 +37,7 @@ export interface UserAccount {
   admissionType?: AdmissionType;
   activeSemesterNumber?: number;
   semesterStartDate?: string; // e.g. "2026-08-01"
+  classesEndDate?: string; // e.g. "2026-12-15" (Tentative last date of regular lectures before ETT/finals)
   collegeMinAttendance: number; // e.g. 75% set by University
   personalGoalAttendance: number; // e.g. 90% custom student target (>= collegeMinAttendance)
   targetAttendance?: number; // legacy alias for compatibility

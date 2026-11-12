@@ -126,6 +126,7 @@ export interface RegisterPayload {
   staySignedIn?: boolean;
   admissionType?: AdmissionType;
   semesterStartDate?: string;
+  classesEndDate?: string;
   backfilledSemesters?: AcademicSemester[];
   midSemCatchup?: MidSemCatchupData;
 }
@@ -167,6 +168,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     admissionType,
     activeSemesterNumber: parsedSem,
     semesterStartDate: payload.semesterStartDate,
+    classesEndDate: payload.classesEndDate,
     collegeMinAttendance: payload.targetAttendance || 75,
     personalGoalAttendance: Math.max(85, payload.targetAttendance || 75),
     targetAttendance: payload.targetAttendance || 75,

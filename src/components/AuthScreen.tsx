@@ -61,6 +61,9 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [degreeType, setDegreeType] = useState(DEGREE_PROGRAMS[0].id);
   const [semester, setSemester] = useState('Semester 1');
   const [semesterStartDate, setSemesterStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [classesEndDate, setClassesEndDate] = useState(() => {
+    return new Date(Date.now() + 15 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  });
   const [targetAttendance, setTargetAttendance] = useState(75);
 
   // Smart Multi-Semester Onboarding State
@@ -205,6 +208,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           degreeType: selectedDegreeObj.name,
           semester,
           semesterStartDate,
+          classesEndDate,
           targetAttendance,
           staySignedIn,
           admissionType: currentSemNum > 1 ? admissionType : 'fresh',
@@ -533,6 +537,28 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
                   Timetable and attendance tracking anchor from this date onwards.
+                </p>
+              </div>
+
+              {/* Tentative Last Date of Regular Classes */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Tentative Last Date of Regular Classes (Teaching Ends)
+                  </label>
+                  <span className="text-[10px] text-amber-400 font-mono">Speculated ±2-5 Days</span>
+                </div>
+                <div className="relative">
+                  <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="date"
+                    value={classesEndDate}
+                    onChange={(e) => setClassesEndDate(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  When lectures stop for ETT/finals prep (typically 2–3 weeks before official session closes). Used to calculate true remaining lectures and debarment feasibility.
                 </p>
               </div>
 

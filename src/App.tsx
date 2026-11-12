@@ -1052,6 +1052,7 @@ export function App() {
             <AttendanceCalculator
               user={currentUser}
               state={viewState}
+              onUpdateUser={handleUpdateUser}
               onUpdateCourse={handleUpdateCourse}
               onDeleteCourse={handleDeleteCourse}
               onUpdateGoals={handleUpdateGoals}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Course, StudentData, AttendanceStatus, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
-import { calculateAttendance } from '../utils/timeUtils';
+import { calculateAttendance, getRemainingClassesForCourse } from '../utils/timeUtils';
 import { 
   PieChart, 
   ShieldCheck, 
@@ -29,6 +29,7 @@ import confetti from 'canvas-confetti';
 interface AttendanceCalculatorProps {
   user: UserAccount;
   state: StudentData;
+  onUpdateUser?: (user: UserAccount) => void;
   onUpdateCourse: (course: Course) => void;
   onDeleteCourse?: (courseId: string) => void;
   onUpdateGoals: (collegeMin: number, personalGoal: number) => void;
@@ -53,6 +54,7 @@ const PRESET_COLORS = [
 export function AttendanceCalculator({
   user,
   state,
+  onUpdateUser,
   onUpdateCourse,
   onDeleteCourse,
   onUpdateGoals,
@@ -70,6 +72,12 @@ export function AttendanceCalculator({
   const [goalError, setGoalError] = useState('');
   const [simulatingCourseId, setSimulatingCourseId] = useState<string | null>(null);
   const [simulatedBunks, setSimulatedBunks] = useState<Record<string, number>>({});
+
+  const [editingClassesEnd, setEditingClassesEnd] = useState(false);
+  const [tempClassesEnd, setTempClassesEnd] = useState(user.classesEndDate || '');
+  const [showBulkMatrix, setShowBulkMatrix] = useState(false);
+  const [bulkBaselines, setBulkBaselines] = useState<Record<string, { held: number; attended: number }>>({});
+  const [bulkMatrixSaving, setBulkMatrixSaving] = useState(false);
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
 
@@ -157,6 +165,52 @@ export function AttendanceCalculator({
     if (!editingCourse) return;
     onUpdateCourse(editingCourse);
     setEditingCourse(null);
+  };
+
+  const openBulkMatrix = () => {
+    const initial: Record<string, { held: number; attended: number }> = {};
+    for (const c of state.courses) {
+      initial[c.id] = {
+        held: c.baselineClassesHeld ?? 0,
+        attended: c.baselineAttendedClasses ?? 0,
+      };
+    }
+    setBulkBaselines(initial);
+    setShowBulkMatrix(true);
+  };
+
+  const handleSaveBulkMatrix = () => {
+    setBulkMatrixSaving(true);
+    try {
+      for (const c of state.courses) {
+        const entry = bulkBaselines[c.id];
+        if (entry) {
+          const held = Math.max(0, entry.held);
+          const attended = Math.min(held, Math.max(0, entry.attended));
+          if (held !== c.baselineClassesHeld || attended !== c.baselineAttendedClasses) {
+            onUpdateCourse({
+              ...c,
+              baselineClassesHeld: held,
+              baselineAttendedClasses: attended,
+            });
+          }
+        }
+      }
+      setShowBulkMatrix(false);
+    } finally {
+      setBulkMatrixSaving(false);
+    }
+  };
+
+  const handleApplyBulkPercentage = (pct: number) => {
+    const updated = { ...bulkBaselines };
+    for (const c of state.courses) {
+      const curHeld = updated[c.id]?.held || 30;
+      const held = curHeld > 0 ? curHeld : 30;
+      const attended = Math.round(held * (pct / 100));
+      updated[c.id] = { held, attended };
+    }
+    setBulkBaselines(updated);
   };
 
   return (
@@ -338,12 +392,65 @@ export function AttendanceCalculator({
           <h3 className="text-lg font-bold" style={{ color: theme.textPrimary }}>
             Course-by-Course Attendance Breakdown
           </h3>
-          <p className="text-xs text-slate-400">
-            Real-time safe bunk thresholds & attendance logs.
-          </p>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <p className="text-xs text-slate-400">
+              Real-time safe bunk thresholds & attendance logs.
+            </p>
+            <div className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+              <span className="text-slate-400">📅 Classes End:</span>
+              {editingClassesEnd ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={tempClassesEnd}
+                    onChange={(e) => setTempClassesEnd(e.target.value)}
+                    className="px-1.5 py-0.5 bg-black/40 border border-white/20 rounded text-[11px] text-white focus:outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      if (onUpdateUser) {
+                        onUpdateUser({ ...user, classesEndDate: tempClassesEnd || undefined });
+                      }
+                      setEditingClassesEnd(false);
+                    }}
+                    className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingClassesEnd(false)}
+                    className="text-slate-400 hover:text-white text-[10px]"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setTempClassesEnd(user.classesEndDate || '');
+                    setEditingClassesEnd(true);
+                  }}
+                  className="font-mono font-bold text-amber-400 hover:underline flex items-center gap-1"
+                  title="Click to edit tentative last date of regular classes"
+                >
+                  {user.classesEndDate || 'Not set'}
+                  <Edit3 className="w-2.5 h-2.5 text-slate-400" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={openBulkMatrix}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 transition-all flex items-center gap-1.5 shadow-sm"
+            title="Calibrate individual ERP portal attendance figures per subject"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            ⚡ Calibrate Subject Baselines
+          </button>
+
           {onOpenHistory && (
             <button
               onClick={onOpenHistory}
@@ -351,7 +458,7 @@ export function AttendanceCalculator({
               title="Open full attendance records history"
             >
               <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-              Attendance History & Logs ({state.attendanceRecords?.length || 0})
+              Attendance Logs ({state.attendanceRecords?.length || 0})
             </button>
           )}
 
@@ -371,7 +478,21 @@ export function AttendanceCalculator({
       {/* Course-by-Course Attendance Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {state.courses.map((course) => {
-          const analysis = calculateAttendance(course, collegeMin, personalGoal);
+          const remainingClasses = getRemainingClassesForCourse(
+            course.id,
+            state.timeSlots,
+            new Date(),
+            user.classesEndDate,
+            state.holidays,
+            state.scheduleOverrides
+          );
+          const analysis = calculateAttendance(
+            course,
+            collegeMin,
+            personalGoal,
+            remainingClasses,
+            user.classesEndDate
+          );
 
           return (
             <div
@@ -479,10 +600,16 @@ export function AttendanceCalculator({
                 </div>
 
                 {/* Bunk status badge */}
-                <div className="mt-3">
+                <div className="mt-3 space-y-1.5">
                   <div className={`p-2 rounded-xl text-xs font-semibold border text-center ${analysis.badgeColor}`}>
                     {analysis.statusText}
                   </div>
+                  {analysis.projectionSummary && (
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/5 text-[11px] text-slate-300 leading-snug">
+                      <span className="font-semibold text-indigo-300">📅 Term-End Projection: </span>
+                      {analysis.projectionSummary}
+                    </div>
+                  )}
                 </div>
 
                 {/* Interactive What-If Bunk Simulator */}
@@ -942,6 +1069,181 @@ export function AttendanceCalculator({
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* BULK BASELINE CALIBRATION MATRIX MODAL */}
+      {showBulkMatrix && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div 
+            className="w-full max-w-3xl rounded-3xl p-6 border shadow-2xl relative my-8"
+            style={{
+              backgroundColor: theme.headerBg,
+              borderColor: theme.cardBorder,
+            }}
+          >
+            <button
+              onClick={() => setShowBulkMatrix(false)}
+              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div 
+                className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-md bg-amber-500 text-slate-950 font-black"
+              >
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold tracking-tight" style={{ color: theme.textPrimary }}>
+                  Subject ERP Attendance Calibration
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Calibrate your exact attendance figures per subject from your college ERP (e.g. 97%, 93%, 87%, 85%) for pinpoint safe-bunk and shortage calculations.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Presets */}
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/5 mb-4 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                Quick Presets:
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[75, 80, 85, 90, 93, 95].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => handleApplyBulkPercentage(pct)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/5 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition-colors border border-white/10"
+                  >
+                    Set all to {pct}%
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const reset: Record<string, { held: number; attended: number }> = {};
+                    for (const c of state.courses) {
+                      reset[c.id] = { held: 0, attended: 0 };
+                    }
+                    setBulkBaselines(reset);
+                  }}
+                  className="px-2 py-1 rounded-lg text-xs font-semibold text-rose-400 hover:bg-rose-950/30 transition-colors ml-1"
+                >
+                  Reset All
+                </button>
+              </div>
+            </div>
+
+            {/* Courses Table */}
+            <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1 my-2">
+              <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 pb-1 border-b border-white/5">
+                <div className="col-span-5 sm:col-span-4">Subject</div>
+                <div className="col-span-3 sm:col-span-3 text-center">Classes Held</div>
+                <div className="col-span-3 sm:col-span-3 text-center">Attended</div>
+                <div className="col-span-1 sm:col-span-2 text-right">Attendance %</div>
+              </div>
+
+              {state.courses.map((c) => {
+                const entry = bulkBaselines[c.id] || { held: c.baselineClassesHeld ?? 0, attended: c.baselineAttendedClasses ?? 0 };
+                const curPct = entry.held > 0 ? Math.round((entry.attended / entry.held) * 1000) / 10 : 100;
+                const isSafe = curPct >= collegeMin;
+
+                return (
+                  <div 
+                    key={c.id} 
+                    className="grid grid-cols-12 gap-2 items-center p-3 rounded-2xl bg-black/30 border border-white/5 hover:border-white/10 transition-colors"
+                  >
+                    <div className="col-span-5 sm:col-span-4">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                        <span className="font-mono font-bold text-xs text-white">{c.code}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5" title={c.name}>{c.name}</p>
+                    </div>
+
+                    <div className="col-span-3 sm:col-span-3 flex justify-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="250"
+                        value={entry.held}
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setBulkBaselines((prev) => ({
+                            ...prev,
+                            [c.id]: {
+                              held: val,
+                              attended: Math.min(val, prev[c.id]?.attended ?? 0),
+                            },
+                          }));
+                        }}
+                        className="w-20 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs text-center focus:outline-none focus:border-amber-400"
+                        placeholder="Held"
+                      />
+                    </div>
+
+                    <div className="col-span-3 sm:col-span-3 flex justify-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max={entry.held || 250}
+                        value={entry.attended}
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setBulkBaselines((prev) => ({
+                            ...prev,
+                            [c.id]: {
+                              held: prev[c.id]?.held ?? 0,
+                              attended: Math.min(prev[c.id]?.held ?? 0, val),
+                            },
+                          }));
+                        }}
+                        className="w-20 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs text-center focus:outline-none focus:border-amber-400"
+                        placeholder="Attended"
+                      />
+                    </div>
+
+                    <div className="col-span-1 sm:col-span-2 text-right">
+                      <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-mono font-bold ${
+                        isSafe ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-500/20' : 'text-rose-400 bg-rose-950/40 border border-rose-500/20'
+                      }`}>
+                        {entry.held > 0 ? `${curPct}%` : '100%'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/10">
+              <span className="text-[11px] text-slate-400">
+                Calibrating {state.courses.length} subjects for accurate safe-bunks and shortages.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkMatrix(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkMatrixSaving}
+                  onClick={handleSaveBulkMatrix}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 shadow-md font-bold transition-all disabled:opacity-50"
+                >
+                  {bulkMatrixSaving ? 'Saving...' : 'Save All Baselines'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

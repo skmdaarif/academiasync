@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { StudentData, Course, TimeSlot, UserAccount, DayOfWeek } from '../types';
 import { THEMES } from '../styles/themes';
 import { parseTimetablePdf, ParsedTimetableResult, ParsedTimeSlot } from '../utils/pdfTimetableParser';
@@ -49,6 +49,28 @@ export function PdfImportModal({
   // Import mode
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [updateProfile, setUpdateProfile] = useState(true);
+
+  // Mid-Semester Attendance Baseline per Course (Slot-frequency aware)
+  const isMidSemester = Boolean(user.semesterStartDate && user.semesterStartDate < new Date().toISOString().split('T')[0]);
+  const [courseBaselines, setCourseBaselines] = useState<Record<string, { held: number; attended: number }>>({});
+
+  useEffect(() => {
+    if (parsedData && isMidSemester) {
+      const today = new Date();
+      const start = new Date(user.semesterStartDate!);
+      const elapsedWeeks = Math.max(1, Math.floor((today.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+      const basePct = user.initialAttendancePct ?? 85;
+
+      const initial: Record<string, { held: number; attended: number }> = {};
+      for (const c of parsedData.courses) {
+        const slotsCount = parsedData.slots.filter(s => s.courseCode === c.code).length;
+        const held = Math.max(8, (slotsCount > 0 ? slotsCount : 3) * elapsedWeeks);
+        const attended = Math.round(held * (basePct / 100));
+        initial[c.code] = { held, attended };
+      }
+      setCourseBaselines(initial);
+    }
+  }, [parsedData, isMidSemester, user.semesterStartDate, user.initialAttendancePct]);
 
   const overlappingSlots = useMemo(() => {
     if (!parsedData) return [];
@@ -156,6 +178,7 @@ export function PdfImportModal({
 
     parsedData.courses.forEach((c) => {
       const courseId = `course_${c.code.toLowerCase()}_${Date.now()}`;
+      const baseline = courseBaselines[c.code];
       courseMap.set(c.code, {
         id: courseId,
         code: c.code,
@@ -166,6 +189,8 @@ export function PdfImportModal({
         defaultRoom: c.defaultRoom,
         totalClasses: 0,
         attendedClasses: 0,
+        baselineClassesHeld: baseline ? baseline.held : undefined,
+        baselineAttendedClasses: baseline ? baseline.attended : undefined,
         attendanceGoal: user.personalGoalAttendance || user.collegeMinAttendance || 75,
       });
     });
@@ -387,26 +412,72 @@ export function PdfImportModal({
                 <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
                 Detected Courses ({parsedData.courses.length})
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
-                {parsedData.courses.map((c) => (
-                  <div
-                    key={c.code}
-                    className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-2"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                      <div className="truncate">
-                        <span className="font-mono font-bold text-xs text-white">{c.code}</span>
-                        <span className="text-[11px] text-slate-300 ml-1.5 truncate">{c.name}</span>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {parsedData.courses.map((c) => {
+                  const b = courseBaselines[c.code];
+                  const curPct = b && b.held > 0 ? Math.round((b.attended / b.held) * 1000) / 10 : 100;
+                  return (
+                    <div
+                      key={c.code}
+                      className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                        <div className="truncate">
+                          <span className="font-mono font-bold text-xs text-white">{c.code}</span>
+                          <span className="text-[11px] text-slate-300 ml-1.5 truncate">{c.name}</span>
+                          <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-white/10 text-slate-300 ml-1.5">
+                            {c.credits} cr
+                          </span>
+                        </div>
                       </div>
+
+                      {isMidSemester && (
+                        <div className="flex items-center gap-2 shrink-0 text-xs">
+                          <span className="text-[10px] text-slate-400">Held:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="200"
+                            value={b?.held ?? 0}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setCourseBaselines((prev) => ({
+                                ...prev,
+                                [c.code]: {
+                                  held: val,
+                                  attended: Math.min(val, prev[c.code]?.attended ?? 0),
+                                },
+                              }));
+                            }}
+                            className="w-14 px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-white font-mono text-center text-xs focus:outline-none"
+                          />
+                          <span className="text-[10px] text-slate-400">Attd:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={b?.held ?? 200}
+                            value={b?.attended ?? 0}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setCourseBaselines((prev) => ({
+                                ...prev,
+                                [c.code]: {
+                                  held: prev[c.code]?.held ?? 0,
+                                  attended: Math.min(prev[c.code]?.held ?? 0, val),
+                                },
+                              }));
+                            }}
+                            className="w-14 px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-white font-mono text-center text-xs focus:outline-none"
+                          />
+                          <span className="text-[11px] font-mono font-bold text-amber-400 w-12 text-right">
+                            {curPct}%
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
-                        {c.credits} cr
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

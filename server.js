@@ -211,6 +211,7 @@ function ensureColumn(table, column, definition) {
 ensureColumn('users', 'admission_type', "TEXT DEFAULT 'fresh'");
 ensureColumn('users', 'active_semester_number', 'INTEGER DEFAULT 1');
 ensureColumn('users', 'semester_start_date', 'TEXT');
+ensureColumn('users', 'classes_end_date', 'TEXT');
 ensureColumn('users', 'student_batch', 'TEXT');
 ensureColumn('users', 'excused_policy', "TEXT DEFAULT 'exemption'");
 ensureColumn('users', 'initial_attendance_pct', 'REAL');
@@ -482,6 +483,7 @@ app.post('/api/auth/register', async (req, res) => {
       degreeType,
       semester,
       semesterStartDate,
+      classesEndDate,
       studentBatch,
       excusedPolicy,
       collegeMinAttendance,
@@ -540,8 +542,8 @@ app.post('/api/auth/register', async (req, res) => {
           branch, degree_type, semester, total_semesters,
           college_min_attendance, personal_attendance_goal, target_attendance_percentage,
           theme_preference, admission_type, active_semester_number,
-          semester_start_date, student_batch, excused_policy, initial_attendance_pct
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          semester_start_date, classes_end_date, student_batch, excused_policy, initial_attendance_pct
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         userId,
         name.trim(),
@@ -560,6 +562,7 @@ app.post('/api/auth/register', async (req, res) => {
         finalAdmissionType,
         activeSemNumber,
         semesterStartDate || null,
+        classesEndDate || null,
         studentBatch || null,
         excusedPolicy || 'exemption',
         initialAttPct
@@ -688,6 +691,7 @@ app.post('/api/auth/register', async (req, res) => {
       admissionType: finalAdmissionType,
       activeSemesterNumber: activeSemNumber,
       semesterStartDate: semesterStartDate || undefined,
+      classesEndDate: classesEndDate || undefined,
       studentBatch: studentBatch || undefined,
       excusedPolicy: excusedPolicy || 'exemption',
       initialAttendancePct: initialAttPct != null ? initialAttPct : undefined,
@@ -724,7 +728,7 @@ app.post('/api/auth/login', async (req, res) => {
       SELECT id, full_name, email, password_hash, country, college_name,
              branch, degree_type, semester, total_semesters,
              college_min_attendance, personal_attendance_goal, target_attendance_percentage,
-             theme_preference, semester_start_date, admission_type, active_semester_number,
+             theme_preference, semester_start_date, classes_end_date, admission_type, active_semester_number,
              student_batch, excused_policy, initial_attendance_pct
       FROM users WHERE LOWER(email) = ?
     `).get(normalizedEmail);
@@ -755,6 +759,7 @@ app.post('/api/auth/login', async (req, res) => {
       admissionType: userRow.admission_type || 'fresh',
       activeSemesterNumber: activeSemNumber,
       semesterStartDate: userRow.semester_start_date || undefined,
+      classesEndDate: userRow.classes_end_date || undefined,
       studentBatch: userRow.student_batch || undefined,
       excusedPolicy: userRow.excused_policy || 'exemption',
       initialAttendancePct: userRow.initial_attendance_pct != null ? Number(userRow.initial_attendance_pct) : undefined,
@@ -1001,7 +1006,7 @@ app.post('/api/semesters/promote', requireAuth, (req, res) => {
       SELECT id, full_name as name, email, country, college_name as collegeName,
              branch, degree_type as degreeType, semester, total_semesters as totalSemesters,
              active_semester_number as activeSemesterNumber, admission_type as admissionType,
-             semester_start_date as semesterStartDate, college_min_attendance as collegeMinAttendance,
+             semester_start_date as semesterStartDate, classes_end_date as classesEndDate, college_min_attendance as collegeMinAttendance,
              personal_attendance_goal as personalGoalAttendance, theme_preference as theme
       FROM users WHERE id = ?
     `).get(effectiveUserId);
@@ -2041,6 +2046,7 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
       degreeType,
       semester,
       semesterStartDate,
+      classesEndDate,
       studentBatch,
       excusedPolicy,
       collegeMinAttendance,
@@ -2071,6 +2077,7 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
           degree_type = COALESCE(?, degree_type),
           semester = COALESCE(?, semester),
           semester_start_date = ?,
+          classes_end_date = ?,
           student_batch = ?,
           excused_policy = COALESCE(?, excused_policy),
           college_min_attendance = COALESCE(?, college_min_attendance),
@@ -2085,6 +2092,7 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
       degreeType || null,
       semester || null,
       semesterStartDate !== undefined ? semesterStartDate : existing.semester_start_date,
+      classesEndDate !== undefined ? classesEndDate : existing.classes_end_date,
       studentBatch !== undefined ? studentBatch : existing.student_batch,
       excusedPolicy || null,
       minAtt,
@@ -2097,7 +2105,8 @@ app.put('/api/users/profile', requireAuth, (req, res) => {
     const updated = db.prepare(`
       SELECT id, full_name as name, email, country, college_name as collegeName,
              branch, degree_type as degreeType, semester, total_semesters as totalSemesters,
-             semester_start_date as semesterStartDate, student_batch as studentBatch,
+             semester_start_date as semesterStartDate, classes_end_date as classesEndDate,
+             student_batch as studentBatch,
              excused_policy as excusedPolicy, initial_attendance_pct as initialAttendancePct,
              college_min_attendance as collegeMinAttendance,
              personal_attendance_goal as personalGoalAttendance, theme_preference as theme

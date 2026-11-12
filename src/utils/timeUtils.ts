@@ -278,12 +278,71 @@ export interface AttendanceAnalysis {
   personalGoalSafeBunks: number;
   classesNeededForCollege: number;
   classesNeededForPersonalGoal: number;
+  remainingClasses?: number;
+  termCollegeSafeBunks?: number;
+  termPersonalSafeBunks?: number;
+  isDebarmentInevitable?: boolean;
+  projectionSummary?: string;
+}
+
+/**
+ * Calculates the exact remaining lectures for a specific course between now and classesEndDate,
+ * taking into account holidays/institutional breaks, one-offs, and day order overrides.
+ */
+export function getRemainingClassesForCourse(
+  courseId: string,
+  timeSlots: TimeSlot[],
+  fromDate: Date = new Date(),
+  classesEndDateStr?: string,
+  holidays?: AcademicHoliday[],
+  overrides?: ScheduleOverride[]
+): number {
+  if (!classesEndDateStr) return 0;
+  const endDate = new Date(classesEndDateStr + 'T23:59:59');
+  if (fromDate.getTime() >= endDate.getTime()) return 0;
+
+  const holidayDateSet = new Set<string>();
+  if (holidays && holidays.length > 0) {
+    for (const h of holidays) {
+      if (h.isOffDay === false) continue;
+      const cur = new Date(h.startDate + 'T00:00:00');
+      const hEnd = new Date(h.endDate + 'T23:59:59');
+      while (cur.getTime() <= hEnd.getTime()) {
+        holidayDateSet.add(cur.toISOString().split('T')[0]);
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+  }
+
+  const courseSlots = timeSlots.filter((s) => s.courseId === courseId);
+  if (courseSlots.length === 0) return 0;
+
+  let count = 0;
+  const runner = new Date(fromDate);
+  runner.setHours(0, 0, 0, 0);
+  runner.setDate(runner.getDate() + 1); // Start projecting from tomorrow
+
+  while (runner.getTime() <= endDate.getTime()) {
+    const runnerDateStr = runner.toISOString().split('T')[0];
+    if (!holidayDateSet.has(runnerDateStr)) {
+      for (const slot of courseSlots) {
+        if (isSlotActiveOnDate(slot, runner, undefined, overrides)) {
+          count++;
+        }
+      }
+    }
+    runner.setDate(runner.getDate() + 1);
+  }
+
+  return count;
 }
 
 export function calculateAttendance(
   course: Course,
   collegeMinRequirement: number = 75,
-  personalGoalPercentage?: number
+  personalGoalPercentage?: number,
+  remainingClasses?: number,
+  classesEndDate?: string
 ): AttendanceAnalysis {
   const total = (course.totalClasses || 0) + (course.baselineClassesHeld || 0);
   const attended = (course.attendedClasses || 0) + (course.baselineAttendedClasses || 0);
@@ -305,6 +364,9 @@ export function calculateAttendance(
       personalGoalSafeBunks: 0,
       classesNeededForCollege: 0,
       classesNeededForPersonalGoal: 0,
+      remainingClasses: remainingClasses || 0,
+      termCollegeSafeBunks: remainingClasses || 0,
+      termPersonalSafeBunks: remainingClasses || 0,
     };
   }
 
@@ -338,10 +400,43 @@ export function calculateAttendance(
     }
   }
 
+  // Term-End Projection Calculations (if remainingClasses is provided)
+  const hasRemaining = typeof remainingClasses === 'number' && remainingClasses > 0;
+  let termCollegeSafeBunks: number | undefined = undefined;
+  let termPersonalSafeBunks: number | undefined = undefined;
+  let isDebarmentInevitable = false;
+  let projectionSummary: string | undefined = undefined;
+
+  if (hasRemaining) {
+    const finalTotal = total + remainingClasses!;
+    // Max missable out of remaining classes such that (attended + remaining - missable) / finalTotal >= collegeTarget
+    const rawCollegeMissable = Math.floor(attended + remainingClasses! - finalTotal * collegeTarget);
+    termCollegeSafeBunks = Math.max(0, Math.min(remainingClasses!, rawCollegeMissable));
+
+    const rawPersonalMissable = Math.floor(attended + remainingClasses! - finalTotal * personalTarget);
+    termPersonalSafeBunks = Math.max(0, Math.min(remainingClasses!, rawPersonalMissable));
+
+    // Feasibility Check: If below minimum and needed classes exceed remaining lectures
+    if (!isCollegeSafe && classesNeededForCollege > remainingClasses!) {
+      isDebarmentInevitable = true;
+    }
+
+    if (isDebarmentInevitable) {
+      projectionSummary = `🚨 Critical: ${classesNeededForCollege} classes needed, but only ${remainingClasses} remaining before teaching ends (${classesEndDate || 'term end'}). OD / Medical duty required!`;
+    } else if (isCollegeSafe) {
+      projectionSummary = `${remainingClasses} lectures remain until ${classesEndDate || 'teaching ends'}. You can miss up to ${termCollegeSafeBunks} to finish above ${collegeMinRequirement}%.`;
+    } else {
+      projectionSummary = `${remainingClasses} lectures remain until ${classesEndDate || 'teaching ends'}. Must attend at least ${classesNeededForCollege} of them to reach ${collegeMinRequirement}%.`;
+    }
+  }
+
   let statusText = '';
   let badgeColor = '';
 
-  if (isPersonalGoalMet) {
+  if (isDebarmentInevitable) {
+    statusText = `Debarment Risk! Need ${classesNeededForCollege} classes, only ${remainingClasses} remaining before ${classesEndDate || 'term end'}`;
+    badgeColor = 'text-rose-400 bg-rose-950/60 border-rose-500/50 shadow-rose-900/20';
+  } else if (isPersonalGoalMet) {
     statusText = personalGoalSafeBunks > 0
       ? `On Track! You can miss ${personalGoalSafeBunks} class${personalGoalSafeBunks > 1 ? 'es' : ''} to stay above ${effectivePersonalGoal}%`
       : `Meeting your ${effectivePersonalGoal}% goal! Attend next class`;
@@ -368,6 +463,11 @@ export function calculateAttendance(
     personalGoalSafeBunks,
     classesNeededForCollege,
     classesNeededForPersonalGoal,
+    remainingClasses,
+    termCollegeSafeBunks,
+    termPersonalSafeBunks,
+    isDebarmentInevitable,
+    projectionSummary,
   };
 }
 
