@@ -20,18 +20,9 @@ Running on a **zero-configuration embedded SQLite engine** (`better-sqlite3`), y
 
 ---
 
-## 🖥️ Fresh OS Setup Guide (From Scratch)
+## 🖥️ Setup Guide
 
-Follow the section below corresponding to your operating system if you are setting up on a **brand-new, completely fresh computer**.
-
-```mermaid
-flowchart LR
-    A["Fresh OS"] --> B["1. Install Node.js & Git"]
-    B --> C["2. Clone Repo / Download ZIP"]
-    C --> D["3. Run npm install"]
-    D --> E["4. Run npm run dev"]
-    E --> F["Open http://localhost:5173"]
-```
+Follow the instructions below for your operating system (Windows, macOS, or Linux). This guide covers everything from a brand-new, freshly installed system to running the application.
 
 ---
 
