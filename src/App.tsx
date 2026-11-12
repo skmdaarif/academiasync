@@ -79,6 +79,7 @@ export function App() {
     timeSlots: [],
     tasks: [],
     attendanceRecords: [],
+    scheduleOverrides: [],
     theme: 'dark-slate',
     activeView: 'dashboard',
   });
@@ -132,6 +133,7 @@ export function App() {
           timeSlots: [],
           tasks: [],
           attendanceRecords: [],
+          scheduleOverrides: [],
           theme: 'dark-slate',
           activeView: 'dashboard',
         });
@@ -221,6 +223,7 @@ export function App() {
       timeSlots: [],
       tasks: [],
       attendanceRecords: [],
+      scheduleOverrides: [],
       theme: 'dark-slate',
       activeView: 'dashboard',
     });

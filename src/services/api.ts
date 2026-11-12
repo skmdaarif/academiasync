@@ -65,6 +65,7 @@ export function getLocalStudentData(userId: string): StudentData {
       const parsed = JSON.parse(raw);
       if (!parsed.exams) parsed.exams = [];
       if (!parsed.holidays) parsed.holidays = [];
+      if (!parsed.scheduleOverrides) parsed.scheduleOverrides = [];
       return parsed;
     }
   } catch {
@@ -78,6 +79,7 @@ export function getLocalStudentData(userId: string): StudentData {
     semesters: [],
     exams: [],
     holidays: [],
+    scheduleOverrides: [],
     activeSemesterNumber: 1,
     theme: 'dark-slate',
     activeView: 'dashboard',

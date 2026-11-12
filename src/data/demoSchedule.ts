@@ -202,6 +202,7 @@ export function getDemoStudentData(): StudentData {
     timeSlots,
     tasks,
     attendanceRecords,
+    scheduleOverrides: [],
     theme: 'dark-slate',
     activeView: 'dashboard',
   };
