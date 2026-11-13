@@ -311,6 +311,8 @@ export interface AttendanceAnalysis {
   personalGoalSafeBunks: number;
   classesNeededForCollege: number;
   classesNeededForPersonalGoal: number;
+  effectivePersonalGoal: number;
+  collegeMinRequirement: number;
   remainingClasses?: number;
   termCollegeSafeBunks?: number;
   termPersonalSafeBunks?: number;
@@ -385,9 +387,11 @@ export function calculateAttendance(
   const total = (course.totalClasses || 0) + (course.baselineClassesHeld || 0);
   const attended = (course.attendedClasses || 0) + (course.baselineAttendedClasses || 0);
 
-  // Use course-specific goal if defined, otherwise personal goal (defaulting to college requirement if not set)
+  // Use course-specific goal if explicitly customized and higher than college minimum; otherwise inherits student's personal target
   const targetGoal = personalGoalPercentage !== undefined ? personalGoalPercentage : collegeMinRequirement;
-  const effectivePersonalGoal = course.attendanceGoal || Math.max(targetGoal, collegeMinRequirement);
+  const effectivePersonalGoal = (course.attendanceGoal && course.attendanceGoal > collegeMinRequirement)
+    ? course.attendanceGoal
+    : Math.max(targetGoal, collegeMinRequirement);
   const collegeTarget = collegeMinRequirement / 100;
   const personalTarget = effectivePersonalGoal / 100;
 
@@ -402,6 +406,8 @@ export function calculateAttendance(
       personalGoalSafeBunks: 0,
       classesNeededForCollege: 0,
       classesNeededForPersonalGoal: 0,
+      effectivePersonalGoal,
+      collegeMinRequirement,
       remainingClasses: remainingClasses || 0,
       termCollegeSafeBunks: remainingClasses || 0,
       termPersonalSafeBunks: remainingClasses || 0,
@@ -543,6 +549,8 @@ export function calculateAttendance(
     personalGoalSafeBunks,
     classesNeededForCollege,
     classesNeededForPersonalGoal,
+    effectivePersonalGoal,
+    collegeMinRequirement,
     remainingClasses,
     termCollegeSafeBunks,
     termPersonalSafeBunks,

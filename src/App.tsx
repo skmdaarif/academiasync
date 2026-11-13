@@ -548,6 +548,15 @@ export function App() {
         targetAttendance: personalGoal,
       };
       await handleUpdateUser(updated);
+      // Synchronize any courses that held the uncustomized default target
+      setState((prev) => ({
+        ...prev,
+        courses: prev.courses.map((c) =>
+          !c.attendanceGoal || c.attendanceGoal <= collegeMin
+            ? { ...c, attendanceGoal: personalGoal }
+            : c
+        ),
+      }));
     }
   };
 

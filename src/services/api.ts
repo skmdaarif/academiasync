@@ -123,7 +123,9 @@ export interface RegisterPayload {
   branch: string;
   degreeType: string;
   semester: string;
-  targetAttendance: number;
+  targetAttendance?: number;
+  collegeMinAttendance?: number;
+  personalGoalAttendance?: number;
   staySignedIn?: boolean;
   admissionType?: AdmissionType;
   semesterStartDate?: string;
@@ -170,9 +172,9 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     activeSemesterNumber: parsedSem,
     semesterStartDate: payload.semesterStartDate,
     classesEndDate: payload.classesEndDate,
-    collegeMinAttendance: payload.targetAttendance || 75,
-    personalGoalAttendance: Math.max(85, payload.targetAttendance || 75),
-    targetAttendance: payload.targetAttendance || 75,
+    collegeMinAttendance: payload.collegeMinAttendance || payload.targetAttendance || 75,
+    personalGoalAttendance: payload.personalGoalAttendance || Math.max(85, payload.collegeMinAttendance || payload.targetAttendance || 75),
+    targetAttendance: payload.collegeMinAttendance || payload.targetAttendance || 75,
     theme: 'dark-slate',
     staySignedIn: payload.staySignedIn ?? true,
     storageMode: 'local',

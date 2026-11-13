@@ -565,122 +565,134 @@ export function SettingsModal({
                     {conductedExamsList.length === 0 ? (
                       <p className="text-[10px] text-slate-400 italic">None added in this session.</p>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         {conductedExamsList.map((e, idx) => (
-                          <div key={idx} className="flex items-center gap-1.5 bg-black/30 p-2 rounded-lg border border-white/5">
-                            <input
-                              type="text"
-                              placeholder="e.g. CA 1"
-                              value={e.title}
-                              onChange={(ev) => {
-                                const updated = [...conductedExamsList];
-                                updated[idx].title = ev.target.value;
-                                setConductedExamsList(updated);
-                              }}
-                              className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
-                            />
-                            <select
-                              value={e.examCategory}
-                              onChange={(ev) => {
-                                const updated = [...conductedExamsList];
-                                updated[idx].examCategory = ev.target.value as ExamCategory;
-                                setConductedExamsList(updated);
-                              }}
-                              className="w-20 px-1 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
-                            >
-                              <option value="mtt" className="bg-slate-900">MTT</option>
-                              <option value="ca" className="bg-slate-900">CA</option>
-                              <option value="quiz" className="bg-slate-900">Quiz</option>
-                              <option value="viva" className="bg-slate-900">Viva</option>
-                              <option value="ett" className="bg-slate-900">ETT</option>
-                              <option value="project" className="bg-slate-900">Project</option>
-                            </select>
-                            {state.courses.length > 0 && (
-                              <select
-                                value={e.courseId || ''}
-                                onChange={(ev) => {
-                                  const updated = [...conductedExamsList];
-                                  updated[idx].courseId = ev.target.value || undefined;
-                                  setConductedExamsList(updated);
-                                }}
-                                className="w-24 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
-                              >
-                                <option value="" className="bg-slate-900">Course</option>
-                                {state.courses.map((c) => (
-                                  <option key={c.id} value={c.id} className="bg-slate-900">{c.code}</option>
-                                ))}
-                              </select>
-                            )}
-                            <input
-                              type="date"
-                              value={e.examDate}
-                              onChange={(ev) => {
-                                const updated = [...conductedExamsList];
-                                updated[idx].examDate = ev.target.value;
-                                setConductedExamsList(updated);
-                              }}
-                              className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = [...conductedExamsList];
-                                const nextState = !updated[idx].isResultAwaiting;
-                                updated[idx].isResultAwaiting = nextState;
-                                if (nextState) {
-                                  updated[idx].marksObtained = undefined;
-                                } else if (updated[idx].marksObtained === undefined) {
-                                  updated[idx].marksObtained = Math.round((updated[idx].maxMarks || 20) * 0.85);
-                                }
-                                setConductedExamsList(updated);
-                              }}
-                              className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
-                                e.isResultAwaiting
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                              }`}
-                              title="Toggle whether marks have been declared by faculty"
-                            >
-                              {e.isResultAwaiting ? '⏳ Awaiting' : '✅ Declared'}
-                            </button>
-                            <div className="flex items-center gap-1">
-                              {!e.isResultAwaiting ? (
-                                <>
-                                  <input
-                                    type="number"
-                                    placeholder="Marks"
-                                    value={e.marksObtained ?? ''}
-                                    onChange={(ev) => {
-                                      const updated = [...conductedExamsList];
-                                      updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
-                                      setConductedExamsList(updated);
-                                    }}
-                                    className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
-                                  />
-                                  <span className="text-slate-400 text-xs">/</span>
-                                </>
-                              ) : (
-                                <span className="text-[10px] text-amber-400 font-mono px-1">Max:</span>
-                              )}
+                          <div key={idx} className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                            {/* Row 1: Title, Category, Course, Delete */}
+                            <div className="flex items-center gap-2">
                               <input
-                                type="number"
-                                placeholder="Max"
-                                value={e.maxMarks ?? ''}
+                                type="text"
+                                placeholder="Exam title (e.g. CA 1, Mid-Term, Viva)"
+                                value={e.title}
                                 onChange={(ev) => {
                                   const updated = [...conductedExamsList];
-                                  updated[idx].maxMarks = ev.target.value ? Number(ev.target.value) : undefined;
+                                  updated[idx].title = ev.target.value;
                                   setConductedExamsList(updated);
                                 }}
-                                className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
+                                className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none focus:border-cyan-400/50"
                               />
+                              <select
+                                value={e.examCategory}
+                                onChange={(ev) => {
+                                  const updated = [...conductedExamsList];
+                                  updated[idx].examCategory = ev.target.value as ExamCategory;
+                                  setConductedExamsList(updated);
+                                }}
+                                className="w-24 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs focus:outline-none shrink-0"
+                              >
+                                <option value="ca" className="bg-slate-900">CA</option>
+                                <option value="mtt" className="bg-slate-900">MTT</option>
+                                <option value="quiz" className="bg-slate-900">Quiz</option>
+                                <option value="viva" className="bg-slate-900">Viva</option>
+                                <option value="ett" className="bg-slate-900">ETT</option>
+                                <option value="project" className="bg-slate-900">Project</option>
+                              </select>
+                              {state.courses.length > 0 && (
+                                <select
+                                  value={e.courseId || ''}
+                                  onChange={(ev) => {
+                                    const updated = [...conductedExamsList];
+                                    updated[idx].courseId = ev.target.value || undefined;
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className="w-24 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs focus:outline-none shrink-0"
+                                >
+                                  <option value="" className="bg-slate-900">Course</option>
+                                  {state.courses.map((c) => (
+                                    <option key={c.id} value={c.id} className="bg-slate-900">{c.code}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setConductedExamsList(conductedExamsList.filter((_, i) => i !== idx))}
+                                className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-rose-500/10 rounded-lg transition-colors shrink-0"
+                                title="Remove exam"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setConductedExamsList(conductedExamsList.filter((_, i) => i !== idx))}
-                              className="p-1 text-slate-400 hover:text-red-400"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+
+                            {/* Row 2: Date, Declared / Awaiting Toggle, Marks */}
+                            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between pt-1 border-t border-white/5 text-xs">
+                              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                                <input
+                                  type="date"
+                                  value={e.examDate}
+                                  onChange={(ev) => {
+                                    const updated = [...conductedExamsList];
+                                    updated[idx].examDate = ev.target.value;
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className="w-32 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none shrink-0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...conductedExamsList];
+                                    const nextState = !updated[idx].isResultAwaiting;
+                                    updated[idx].isResultAwaiting = nextState;
+                                    if (nextState) {
+                                      updated[idx].marksObtained = undefined;
+                                    } else if (updated[idx].marksObtained === undefined) {
+                                      updated[idx].marksObtained = Math.round((updated[idx].maxMarks || 20) * 0.85);
+                                    }
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${
+                                    e.isResultAwaiting
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  }`}
+                                  title="Toggle whether marks have been declared by faculty"
+                                >
+                                  {e.isResultAwaiting ? '⏳ Awaiting' : '✅ Declared'}
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 ml-auto">
+                                {!e.isResultAwaiting ? (
+                                  <>
+                                    <span className="text-[10px] text-slate-400 font-medium">Marks:</span>
+                                    <input
+                                      type="number"
+                                      placeholder="Score"
+                                      value={e.marksObtained ?? ''}
+                                      onChange={(ev) => {
+                                        const updated = [...conductedExamsList];
+                                        updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
+                                        setConductedExamsList(updated);
+                                      }}
+                                      className="w-14 px-1.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                                    />
+                                    <span className="text-slate-400 text-xs">/</span>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-amber-400 font-mono px-1">Max:</span>
+                                )}
+                                <input
+                                  type="number"
+                                  placeholder="Max"
+                                  value={e.maxMarks ?? ''}
+                                  onChange={(ev) => {
+                                    const updated = [...conductedExamsList];
+                                    updated[idx].maxMarks = ev.target.value ? Number(ev.target.value) : undefined;
+                                    setConductedExamsList(updated);
+                                  }}
+                                  className="w-14 px-1.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                                />
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>

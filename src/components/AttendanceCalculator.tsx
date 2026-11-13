@@ -645,7 +645,7 @@ export function AttendanceCalculator({
 
                 {/* Progress Bar with Dual Markers */}
                 <div className="mt-4">
-                  <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-1">
+                  <div className="flex justify-between items-center text-[11px] font-semibold text-slate-400 mb-1">
                     <span>
                       {(course.attendedClasses || 0) + (course.baselineAttendedClasses || 0)} / {(course.totalClasses || 0) + (course.baselineClassesHeld || 0)} attended
                       {Boolean((course.baselineClassesHeld || 0) > 0) && (
@@ -654,7 +654,11 @@ export function AttendanceCalculator({
                         </span>
                       )}
                     </span>
-                    <span className="text-amber-400">Target: {course.attendanceGoal || personalGoal}%</span>
+                    <span className="flex items-center gap-1.5 text-[11px]">
+                      <span className="text-slate-400">Min: <strong className="text-slate-200">{collegeMin}%</strong></span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-amber-400 font-bold">Goal: {analysis.effectivePersonalGoal}%</span>
+                    </span>
                   </div>
                   <div className="w-full h-3 rounded-full bg-white/10 relative overflow-hidden">
                     <div
@@ -663,13 +667,46 @@ export function AttendanceCalculator({
                       }`}
                       style={{ width: `${Math.min(100, analysis.percentage)}%` }}
                     />
+                    {/* Visual threshold line for college minimum */}
+                    {collegeMin < 100 && (
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-white/60 pointer-events-none"
+                        style={{ left: `${collegeMin}%` }}
+                        title={`College Minimum (${collegeMin}%)`}
+                      />
+                    )}
                   </div>
                 </div>
 
                 {/* Bunk status badge */}
                 <div className="mt-3 space-y-2">
-                  <div className={`p-2 rounded-xl text-xs font-semibold border text-center ${analysis.badgeColor}`}>
-                    {analysis.statusText}
+                  <div className={`p-2.5 rounded-xl text-xs font-semibold border ${analysis.badgeColor}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold flex items-center gap-1">
+                        {analysis.isPersonalGoalMet ? '🎯' : analysis.isCollegeSafe ? '⚠️' : '🚨'}
+                        {analysis.statusText}
+                      </span>
+                    </div>
+
+                    {/* Secondary safety net context when personal goal differs from college min */}
+                    {analysis.effectivePersonalGoal > collegeMin && (
+                      <div className="mt-1.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px] font-normal text-slate-300">
+                        <span className="flex items-center gap-1 text-slate-400">
+                          🛡️ College Debarment Limit ({collegeMin}%):
+                        </span>
+                        <span>
+                          {analysis.isCollegeSafe ? (
+                            analysis.collegeSafeBunks > 0 ? (
+                              <span className="text-emerald-300 font-semibold">Can miss up to {analysis.collegeSafeBunks} classes</span>
+                            ) : (
+                              <span className="text-amber-300 font-semibold">Borderline (Attend next)</span>
+                            )
+                          ) : (
+                            <span className="text-rose-300 font-semibold">Short by {analysis.classesNeededForCollege} classes</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   {(analysis.collegeProjectionSummary || analysis.goalProjectionSummary) ? (
                     <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/5 text-[11px] space-y-1.5 leading-snug">
@@ -763,21 +800,25 @@ export function AttendanceCalculator({
                           className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-400"
                         />
                         {bunkCount > 0 ? (
-                          <div className="space-y-1 pt-1 text-[11px]">
+                          <div className="space-y-1.5 pt-1 text-[11px]">
                             <div className="flex items-center justify-between">
                               <span className="text-slate-400">Resulting Attendance:</span>
-                              <span className={`font-bold ${simPct >= collegeMin ? 'text-emerald-300' : 'text-rose-400'}`}>
+                              <span className={`font-bold ${simPct >= analysis.effectivePersonalGoal ? 'text-emerald-300' : simPct >= collegeMin ? 'text-amber-300' : 'text-rose-400'}`}>
                                 {simPct.toFixed(1)}% <span className="text-[10px] text-rose-400">(-{drop.toFixed(1)}%)</span>
                               </span>
                             </div>
                             <p className="text-[10px] text-slate-300 leading-tight">
-                              {simPct >= collegeMin ? (
+                              {simPct >= analysis.effectivePersonalGoal ? (
                                 <span className="text-emerald-400">
-                                  ✓ Still within safe margin ({simPct.toFixed(1)}% ≥ {collegeMin}%).
+                                  ✓ Still on track for your {analysis.effectivePersonalGoal}% personal goal and safe from college debarment ({collegeMin}%).
+                                </span>
+                              ) : simPct >= collegeMin ? (
+                                <span className="text-amber-300">
+                                  ⚠️ Drops below your {analysis.effectivePersonalGoal}% goal, but still {(simPct - collegeMin).toFixed(1)}% above the {collegeMin}% college debarment threshold.
                                 </span>
                               ) : (
                                 <span className="text-rose-300">
-                                  ⚠️ Drops below {collegeMin}%! Requires attending <strong>{recoveryNeeded}</strong> consecutive class{recoveryNeeded === 1 ? '' : 'es'} to recover.
+                                  🚨 Debarment Danger! Drops below {collegeMin}% college minimum. Requires attending <strong>{recoveryNeeded}</strong> consecutive class{recoveryNeeded === 1 ? '' : 'es'} to recover.
                                 </span>
                               )}
                             </p>

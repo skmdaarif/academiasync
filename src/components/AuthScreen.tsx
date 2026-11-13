@@ -65,7 +65,8 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [classesEndDate, setClassesEndDate] = useState(() => {
     return getLocalDateString(new Date(Date.now() + 15 * 7 * 24 * 60 * 60 * 1000));
   });
-  const [targetAttendance, setTargetAttendance] = useState(75);
+  const [collegeMinAttendance, setCollegeMinAttendance] = useState(75);
+  const [personalGoalAttendance, setPersonalGoalAttendance] = useState(90);
 
   // Smart Multi-Semester Onboarding State
   const [admissionType, setAdmissionType] = useState<AdmissionType>('fresh');
@@ -210,7 +211,9 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
           semester,
           semesterStartDate,
           classesEndDate,
-          targetAttendance,
+          collegeMinAttendance,
+          personalGoalAttendance,
+          targetAttendance: collegeMinAttendance,
           staySignedIn,
           admissionType: currentSemNum > 1 ? admissionType : 'fresh',
           backfilledSemesters: finalBackfilledSemesters,
@@ -257,7 +260,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Card Container */}
-      <div className="w-full max-w-xl rounded-3xl bg-slate-900/85 backdrop-blur-2xl border border-white/10 p-6 sm:p-8 shadow-2xl relative z-10 my-8">
+      <div className={`w-full ${isSignUp && isPastTermStart && !skipMidSemCatchup ? 'max-w-2xl' : 'max-w-xl'} rounded-3xl bg-slate-900/85 backdrop-blur-2xl border border-white/10 p-6 sm:p-8 shadow-2xl relative z-10 my-8 transition-all duration-300`}>
         
         {/* Brand Header */}
         <div className="text-center mb-6">
@@ -563,26 +566,86 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                 </p>
               </div>
 
-              {/* Attendance Target */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  College Target Attendance Criteria (%)
-                </label>
-                <div className="flex items-center gap-2">
-                  {[75, 80, 85].map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTargetAttendance(t)}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                        targetAttendance === t
-                          ? 'bg-amber-500 text-slate-950 font-black shadow-md'
-                          : 'bg-white/5 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {t}% Criteria
-                    </button>
-                  ))}
+              {/* Dual Attendance Targets */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 1. College Minimum Requirement */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                    College Minimum (%)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[70, 75, 80].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => {
+                          setCollegeMinAttendance(t);
+                          if (personalGoalAttendance < t) setPersonalGoalAttendance(t);
+                        }}
+                        className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          collegeMinAttendance === t
+                            ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                            : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {t}%
+                      </button>
+                    ))}
+                    <div className="w-14">
+                      <input
+                        type="number"
+                        min="50"
+                        max="100"
+                        value={collegeMinAttendance}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 75;
+                          setCollegeMinAttendance(val);
+                          if (personalGoalAttendance < val) setPersonalGoalAttendance(val);
+                        }}
+                        className="w-full px-1.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">Debarment criteria set by university.</p>
+                </div>
+
+                {/* 2. Personal Attendance Goal */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-indigo-400" />
+                    Personal Goal (%)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[80, 85, 90, 95].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setPersonalGoalAttendance(Math.max(t, collegeMinAttendance))}
+                        className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          personalGoalAttendance === t
+                            ? 'bg-indigo-600 text-white font-black shadow-md'
+                            : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {t}%
+                      </button>
+                    ))}
+                    <div className="w-14">
+                      <input
+                        type="number"
+                        min={collegeMinAttendance}
+                        max="100"
+                        value={personalGoalAttendance}
+                        onChange={(e) => {
+                          const val = Math.max(collegeMinAttendance, Number(e.target.value) || collegeMinAttendance);
+                          setPersonalGoalAttendance(val);
+                        }}
+                        className="w-full px-1.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">Your aspirational attendance goal.</p>
                 </div>
               </div>
 
@@ -676,7 +739,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                         ) : (
                           <div className="space-y-1.5">
                             {completedTasksList.map((t, idx) => (
-                              <div key={idx} className="flex items-center gap-1.5 bg-black/30 p-1.5 rounded-lg border border-white/5">
+                              <div key={idx} className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/10">
                                 <input
                                   type="text"
                                   placeholder="e.g. Lab Report 1 / Case Study"
@@ -686,7 +749,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                     updated[idx].title = e.target.value;
                                     setCompletedTasksList(updated);
                                   }}
-                                  className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
+                                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
                                 />
                                 <input
                                   type="date"
@@ -696,12 +759,12 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                     updated[idx].dueDate = e.target.value;
                                     setCompletedTasksList(updated);
                                   }}
-                                  className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
+                                  className="w-32 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none shrink-0"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => setCompletedTasksList(completedTasksList.filter((_, i) => i !== idx))}
-                                  className="p-1 text-slate-400 hover:text-red-400"
+                                  className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-rose-500/10 rounded-lg transition-colors shrink-0"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -741,10 +804,10 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                         {pendingTasksList.length === 0 ? (
                           <p className="text-[10px] text-slate-400 italic">None added yet. Click above to track active homework or project submissions.</p>
                         ) : (
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             {pendingTasksList.map((t, idx) => (
-                              <div key={idx} className="flex flex-col gap-1.5 bg-black/30 p-2 rounded-lg border border-white/5">
-                                <div className="flex items-center gap-1.5">
+                              <div key={idx} className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                                <div className="flex items-center gap-2">
                                   <input
                                     type="text"
                                     placeholder="e.g. Operating Systems Paging Problem"
@@ -754,17 +817,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                       updated[idx].title = e.target.value;
                                       setPendingTasksList(updated);
                                     }}
-                                    className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
-                                  />
-                                  <input
-                                    type="date"
-                                    value={t.dueDate}
-                                    onChange={(e) => {
-                                      const updated = [...pendingTasksList];
-                                      updated[idx].dueDate = e.target.value;
-                                      setPendingTasksList(updated);
-                                    }}
-                                    className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
+                                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
                                   />
                                   <select
                                     value={t.priority || 'medium'}
@@ -773,7 +826,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                       updated[idx].priority = e.target.value as TaskPriority;
                                       setPendingTasksList(updated);
                                     }}
-                                    className="w-20 px-1 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
+                                    className="w-24 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs focus:outline-none shrink-0"
                                   >
                                     <option value="low" className="bg-slate-900">Low</option>
                                     <option value="medium" className="bg-slate-900">Medium</option>
@@ -783,22 +836,34 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                                   <button
                                     type="button"
                                     onClick={() => setPendingTasksList(pendingTasksList.filter((_, i) => i !== idx))}
-                                    className="p-1 text-slate-400 hover:text-red-400"
+                                    className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-rose-500/10 rounded-lg transition-colors shrink-0"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
-                                <input
-                                  type="url"
-                                  placeholder="Optional LMS submission link (Classroom / Moodle / Drive)"
-                                  value={t.submissionUrl || ''}
-                                  onChange={(e) => {
-                                    const updated = [...pendingTasksList];
-                                    updated[idx].submissionUrl = e.target.value;
-                                    setPendingTasksList(updated);
-                                  }}
-                                  className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none placeholder:text-slate-500"
-                                />
+                                <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+                                  <input
+                                    type="date"
+                                    value={t.dueDate}
+                                    onChange={(e) => {
+                                      const updated = [...pendingTasksList];
+                                      updated[idx].dueDate = e.target.value;
+                                      setPendingTasksList(updated);
+                                    }}
+                                    className="w-32 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none shrink-0"
+                                  />
+                                  <input
+                                    type="url"
+                                    placeholder="Optional LMS submission link (Classroom / Moodle / Drive)"
+                                    value={t.submissionUrl || ''}
+                                    onChange={(e) => {
+                                      const updated = [...pendingTasksList];
+                                      updated[idx].submissionUrl = e.target.value;
+                                      setPendingTasksList(updated);
+                                    }}
+                                    className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs focus:outline-none placeholder:text-slate-500"
+                                  />
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -880,106 +945,118 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                         {conductedExamsList.length === 0 ? (
                           <p className="text-[10px] text-slate-400 italic">None added yet. Click above to log past MTTs, CAs, Quizzes, or Vivas with marks obtained or pending.</p>
                         ) : (
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             {conductedExamsList.map((e, idx) => (
-                              <div key={idx} className="flex items-center gap-1.5 bg-black/30 p-2 rounded-lg border border-white/5">
-                                <input
-                                  type="text"
-                                  placeholder="e.g. CA 1"
-                                  value={e.title}
-                                  onChange={(ev) => {
-                                    const updated = [...conductedExamsList];
-                                    updated[idx].title = ev.target.value;
-                                    setConductedExamsList(updated);
-                                  }}
-                                  className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-xs focus:outline-none"
-                                />
-                                <select
-                                  value={e.examCategory}
-                                  onChange={(ev) => {
-                                    const updated = [...conductedExamsList];
-                                    updated[idx].examCategory = ev.target.value as ExamCategory;
-                                    setConductedExamsList(updated);
-                                  }}
-                                  className="w-20 px-1 py-1 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px] focus:outline-none"
-                                >
-                                  <option value="mtt" className="bg-slate-900">MTT</option>
-                                  <option value="ca" className="bg-slate-900">CA</option>
-                                  <option value="quiz" className="bg-slate-900">Quiz</option>
-                                  <option value="viva" className="bg-slate-900">Viva</option>
-                                  <option value="ett" className="bg-slate-900">ETT</option>
-                                  <option value="project" className="bg-slate-900">Project</option>
-                                </select>
-                                <input
-                                  type="date"
-                                  value={e.examDate}
-                                  onChange={(ev) => {
-                                    const updated = [...conductedExamsList];
-                                    updated[idx].examDate = ev.target.value;
-                                    setConductedExamsList(updated);
-                                  }}
-                                  className="w-28 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = [...conductedExamsList];
-                                    const nextState = !updated[idx].isResultAwaiting;
-                                    updated[idx].isResultAwaiting = nextState;
-                                    if (nextState) {
-                                      updated[idx].marksObtained = undefined;
-                                    } else if (updated[idx].marksObtained === undefined) {
-                                      updated[idx].marksObtained = Math.round((updated[idx].maxMarks || 20) * 0.85);
-                                    }
-                                    setConductedExamsList(updated);
-                                  }}
-                                  className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
-                                    e.isResultAwaiting
-                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                  }`}
-                                  title="Toggle whether marks have been declared by faculty"
-                                >
-                                  {e.isResultAwaiting ? '⏳ Awaiting' : '✅ Declared'}
-                                </button>
-                                <div className="flex items-center gap-1">
-                                  {!e.isResultAwaiting ? (
-                                    <>
-                                      <input
-                                        type="number"
-                                        placeholder="Marks"
-                                        value={e.marksObtained ?? ''}
-                                        onChange={(ev) => {
-                                          const updated = [...conductedExamsList];
-                                          updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
-                                          setConductedExamsList(updated);
-                                        }}
-                                        className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
-                                      />
-                                      <span className="text-slate-400 text-xs">/</span>
-                                    </>
-                                  ) : (
-                                    <span className="text-[10px] text-amber-400 font-mono px-1">Max:</span>
-                                  )}
+                              <div key={idx} className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                                {/* Row 1: Title, Category, Delete */}
+                                <div className="flex items-center gap-2">
                                   <input
-                                    type="number"
-                                    placeholder="Max"
-                                    value={e.maxMarks ?? ''}
+                                    type="text"
+                                    placeholder="Exam title (e.g. CA 1, Mid-Term, Viva)"
+                                    value={e.title}
                                     onChange={(ev) => {
                                       const updated = [...conductedExamsList];
-                                      updated[idx].maxMarks = ev.target.value ? Number(ev.target.value) : undefined;
+                                      updated[idx].title = ev.target.value;
                                       setConductedExamsList(updated);
                                     }}
-                                    className="w-14 px-1.5 py-1 rounded bg-white/5 border border-white/10 text-white text-[11px] text-center font-bold focus:outline-none placeholder:font-normal placeholder:text-slate-500"
+                                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none focus:border-cyan-400/50"
                                   />
+                                  <select
+                                    value={e.examCategory}
+                                    onChange={(ev) => {
+                                      const updated = [...conductedExamsList];
+                                      updated[idx].examCategory = ev.target.value as ExamCategory;
+                                      setConductedExamsList(updated);
+                                    }}
+                                    className="w-24 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs focus:outline-none shrink-0"
+                                  >
+                                    <option value="ca" className="bg-slate-900">CA</option>
+                                    <option value="mtt" className="bg-slate-900">MTT</option>
+                                    <option value="quiz" className="bg-slate-900">Quiz</option>
+                                    <option value="viva" className="bg-slate-900">Viva</option>
+                                    <option value="ett" className="bg-slate-900">ETT</option>
+                                    <option value="project" className="bg-slate-900">Project</option>
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConductedExamsList(conductedExamsList.filter((_, i) => i !== idx))}
+                                    className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-rose-500/10 rounded-lg transition-colors shrink-0"
+                                    title="Remove exam"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setConductedExamsList(conductedExamsList.filter((_, i) => i !== idx))}
-                                  className="p-1 text-slate-400 hover:text-red-400"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+
+                                {/* Row 2: Date, Declared / Awaiting Toggle, Marks */}
+                                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between pt-1 border-t border-white/5 text-xs">
+                                  <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                                    <input
+                                      type="date"
+                                      value={e.examDate}
+                                      onChange={(ev) => {
+                                        const updated = [...conductedExamsList];
+                                        updated[idx].examDate = ev.target.value;
+                                        setConductedExamsList(updated);
+                                      }}
+                                      className="w-32 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:outline-none shrink-0"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...conductedExamsList];
+                                        const nextState = !updated[idx].isResultAwaiting;
+                                        updated[idx].isResultAwaiting = nextState;
+                                        if (nextState) {
+                                          updated[idx].marksObtained = undefined;
+                                        } else if (updated[idx].marksObtained === undefined) {
+                                          updated[idx].marksObtained = Math.round((updated[idx].maxMarks || 20) * 0.85);
+                                        }
+                                        setConductedExamsList(updated);
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${
+                                        e.isResultAwaiting
+                                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                      }`}
+                                      title="Toggle whether marks have been declared by faculty"
+                                    >
+                                      {e.isResultAwaiting ? '⏳ Awaiting' : '✅ Declared'}
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 ml-auto">
+                                    {!e.isResultAwaiting ? (
+                                      <>
+                                        <span className="text-[10px] text-slate-400 font-medium">Marks:</span>
+                                        <input
+                                          type="number"
+                                          placeholder="Score"
+                                          value={e.marksObtained ?? ''}
+                                          onChange={(ev) => {
+                                            const updated = [...conductedExamsList];
+                                            updated[idx].marksObtained = ev.target.value ? Number(ev.target.value) : undefined;
+                                            setConductedExamsList(updated);
+                                          }}
+                                          className="w-14 px-1.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                                        />
+                                        <span className="text-slate-400 text-xs">/</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-amber-400 font-mono">Max:</span>
+                                    )}
+                                    <input
+                                      type="number"
+                                      placeholder="Max"
+                                      value={e.maxMarks ?? ''}
+                                      onChange={(ev) => {
+                                        const updated = [...conductedExamsList];
+                                        updated[idx].maxMarks = ev.target.value ? Number(ev.target.value) : undefined;
+                                        setConductedExamsList(updated);
+                                      }}
+                                      className="w-14 px-1.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs text-center font-bold focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
                               </div>
                             ))}
                           </div>
