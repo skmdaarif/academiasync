@@ -37,7 +37,7 @@ export function ExportModal({ user, state, onClose, onRestoreState, onOpenPdfImp
   const [isRestoring, setIsRestoring] = useState(false);
 
   const handleExportTimetableICS = () => {
-    const icsContent = generateTimetableICS(state.timeSlots, state.courses, user.semesterStartDate);
+    const icsContent = generateTimetableICS(state.timeSlots, state.courses, user.classesEndDate || user.semesterStartDate);
     downloadFile(icsContent, `college_timetable_${user.name.toLowerCase().replace(/\s+/g, '_')}.ics`);
   };
 

@@ -10,10 +10,21 @@ export const DAYS_ORDER: DayOfWeek[] = [
   'Sunday'
 ];
 
+/**
+ * Formats a Date object to YYYY-MM-DD in the user's LOCAL timezone.
+ * Avoids the UTC-shift bug where toISOString() yields yesterday/tomorrow during night/early morning hours.
+ */
+export function getLocalDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getTodayDayName(overrides?: ScheduleOverride[]): DayOfWeek {
   const today = new Date();
   if (overrides && overrides.length > 0) {
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(today);
     const match = overrides.find((o) => o.date === todayStr);
     if (match) return match.runDaySchedule;
   }
@@ -34,7 +45,7 @@ export function getEffectiveDayOfWeek(
   date: Date = new Date(),
   overrides?: ScheduleOverride[]
 ): { day: DayOfWeek; isOverride: boolean; overrideReason?: string } {
-  const dateStr = date.toISOString().split('T')[0];
+  const dateStr = getLocalDateString(date);
   const override = overrides?.find((o) => o.date === dateStr);
   if (override) {
     return {
@@ -82,7 +93,7 @@ export function getSlotDurationMultiplier(slot: Partial<TimeSlot>): number {
 
 export function isHolidayDate(targetDate: Date, holidays?: AcademicHoliday[]): AcademicHoliday | null {
   if (!holidays || holidays.length === 0) return null;
-  const dateStr = targetDate.toISOString().split('T')[0];
+  const dateStr = getLocalDateString(targetDate);
   return holidays.find((h) => {
     const s = h.startDate.split('T')[0];
     const e = h.endDate.split('T')[0];
@@ -138,6 +149,8 @@ export interface CurrentClassStatus {
   isScheduleOverride?: boolean;
   overrideDayName?: DayOfWeek;
   overrideReason?: string;
+  isTermEnded?: boolean;
+  classesEndDate?: string;
 }
 
 /**
@@ -153,7 +166,7 @@ export function isSlotActiveOnDate(
   semesterStartDate?: string,
   overrides?: ScheduleOverride[]
 ): boolean {
-  const targetDateStr = targetDate.toISOString().split('T')[0];
+  const targetDateStr = getLocalDateString(targetDate);
 
   // 1. One-Off Makeup Class
   if (slot.isOneOff) {
@@ -197,8 +210,26 @@ export function getCurrentAndNextClass(
   currentTime: Date = new Date(),
   semesterStartDate?: string,
   holidays?: AcademicHoliday[],
-  overrides?: ScheduleOverride[]
+  overrides?: ScheduleOverride[],
+  classesEndDate?: string
 ): CurrentClassStatus {
+  if (classesEndDate) {
+    const endDateTime = new Date(classesEndDate + 'T23:59:59').getTime();
+    if (currentTime.getTime() > endDateTime) {
+      return {
+        currentSlot: null,
+        currentCourse: null,
+        nextSlot: null,
+        nextCourse: null,
+        minutesRemaining: 0,
+        progressPercent: 0,
+        timeUntilNext: 0,
+        isTermEnded: true,
+        classesEndDate,
+      };
+    }
+  }
+
   const activeHoliday = isHolidayDate(currentTime, holidays);
   if (activeHoliday) {
     return {
@@ -315,7 +346,7 @@ export function getRemainingClassesForCourse(
       const cur = new Date(h.startDate + 'T00:00:00');
       const hEnd = new Date(h.endDate + 'T23:59:59');
       while (cur.getTime() <= hEnd.getTime()) {
-        holidayDateSet.add(cur.toISOString().split('T')[0]);
+        holidayDateSet.add(getLocalDateString(cur));
         cur.setDate(cur.getDate() + 1);
       }
     }
@@ -330,7 +361,7 @@ export function getRemainingClassesForCourse(
   runner.setDate(runner.getDate() + 1); // Start projecting from tomorrow
 
   while (runner.getTime() <= endDate.getTime()) {
-    const runnerDateStr = runner.toISOString().split('T')[0];
+    const runnerDateStr = getLocalDateString(runner);
     if (!holidayDateSet.has(runnerDateStr)) {
       for (const slot of courseSlots) {
         if (isSlotActiveOnDate(slot, runner, undefined, overrides)) {

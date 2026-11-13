@@ -98,6 +98,34 @@ export function AttendanceCalculator({
     setTimeout(() => setGoalSavedFeedback(false), 2000);
   };
 
+  const analyzedCourses = useMemo(() => {
+    return state.courses.map((course) => {
+      const remainingClasses = getRemainingClassesForCourse(
+        course.id,
+        state.timeSlots,
+        new Date(),
+        user.classesEndDate,
+        state.holidays,
+        state.scheduleOverrides
+      );
+      const analysis = calculateAttendance(
+        course,
+        collegeMin,
+        personalGoal,
+        remainingClasses,
+        user.classesEndDate
+      );
+      return { course, analysis, remainingClasses };
+    });
+  }, [state.courses, state.timeSlots, user.classesEndDate, state.holidays, state.scheduleOverrides, collegeMin, personalGoal]);
+
+  const debarmentRiskCourses = analyzedCourses.filter(
+    (c) => c.analysis.severityLevel === 'debarment_risk' || c.analysis.severityLevel === 'college_warning'
+  );
+  const goalAlertCourses = analyzedCourses.filter(
+    (c) => c.analysis.isCollegeSafe && (c.analysis.severityLevel === 'goal_unreachable' || c.analysis.severityLevel === 'goal_warning')
+  );
+
   if (state.courses.length === 0) {
     return (
       <div 
@@ -212,34 +240,6 @@ export function AttendanceCalculator({
     }
     setBulkBaselines(updated);
   };
-
-  const analyzedCourses = useMemo(() => {
-    return state.courses.map((course) => {
-      const remainingClasses = getRemainingClassesForCourse(
-        course.id,
-        state.timeSlots,
-        new Date(),
-        user.classesEndDate,
-        state.holidays,
-        state.scheduleOverrides
-      );
-      const analysis = calculateAttendance(
-        course,
-        collegeMin,
-        personalGoal,
-        remainingClasses,
-        user.classesEndDate
-      );
-      return { course, analysis, remainingClasses };
-    });
-  }, [state.courses, state.timeSlots, user.classesEndDate, state.holidays, state.scheduleOverrides, collegeMin, personalGoal]);
-
-  const debarmentRiskCourses = analyzedCourses.filter(
-    (c) => c.analysis.severityLevel === 'debarment_risk' || c.analysis.severityLevel === 'college_warning'
-  );
-  const goalAlertCourses = analyzedCourses.filter(
-    (c) => c.analysis.isCollegeSafe && (c.analysis.severityLevel === 'goal_unreachable' || c.analysis.severityLevel === 'goal_warning')
-  );
 
   return (
     <div className="space-y-6">

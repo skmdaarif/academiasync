@@ -385,6 +385,7 @@ export async function apiDeleteCourse(courseId: string, userId: string = 'local_
   data.timeSlots = data.timeSlots.filter((s) => s.courseId !== courseId);
   data.attendanceRecords = data.attendanceRecords.filter((a) => a.courseId !== courseId);
   if (!data.exams) data.exams = [];
+  data.exams = data.exams.filter((e) => e.courseId !== courseId);
   saveLocalStudentData(userId, data);
 }
 
@@ -893,6 +894,9 @@ export async function apiWipeData(userId: string): Promise<void> {
     timeSlots: [],
     tasks: [],
     attendanceRecords: [],
+    exams: [],
+    holidays: [],
+    scheduleOverrides: [],
     theme: 'dark-slate',
     activeView: 'dashboard',
   });
@@ -1080,6 +1084,8 @@ export async function apiPromoteSemester(
   if (currUser) {
     currUser.activeSemesterNumber = nextSemesterNumber;
     currUser.semester = `Semester ${nextSemesterNumber}`;
+    currUser.semesterStartDate = today;
+    currUser.classesEndDate = undefined;
     saveLocalUser(currUser);
   }
   saveLocalStudentData(userId, localData);

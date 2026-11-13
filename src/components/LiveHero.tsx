@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { StudentData, AttendanceStatus, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
-import { getCurrentAndNextClass, formatTime12h, calculateAttendance, playCampusBellChime, getSlotDurationMultiplier } from '../utils/timeUtils';
+import { getCurrentAndNextClass, formatTime12h, calculateAttendance, playCampusBellChime, getSlotDurationMultiplier, getLocalDateString } from '../utils/timeUtils';
 import { sendAppNotification, requestNotificationPermission } from '../services/platform';
 import confetti from 'canvas-confetti';
 
@@ -67,12 +67,12 @@ export function LiveHero({
   }, []);
 
   const theme = THEMES[state.theme] || THEMES['dark-slate'];
-  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate, state.holidays, state.scheduleOverrides);
+  const status = getCurrentAndNextClass(state.timeSlots, state.courses, currentTime, user.semesterStartDate, state.holidays, state.scheduleOverrides, user.classesEndDate);
 
   // Background reminder notifications for upcoming lectures (<= 10 mins before class)
   useEffect(() => {
     if (status.nextSlot && status.nextCourse && status.timeUntilNext > 0 && status.timeUntilNext <= 10) {
-      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayDateStr = getLocalDateString();
       const notifyKey = `${status.nextSlot.id}_${todayDateStr}`;
       if (!notifiedSlots.has(notifyKey)) {
         setNotifiedSlots((prev) => new Set(prev).add(notifyKey));
@@ -87,7 +87,7 @@ export function LiveHero({
   // Audio Campus Bell Chime (<= 5 mins before class)
   useEffect(() => {
     if (chimeEnabled && status.nextSlot && status.timeUntilNext > 0 && status.timeUntilNext <= 5) {
-      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayDateStr = getLocalDateString();
       const chimeKey = `${status.nextSlot.id}_${todayDateStr}`;
       if (!chimedSlots.has(chimeKey)) {
         setChimedSlots((prev) => new Set(prev).add(chimeKey));
@@ -120,7 +120,7 @@ export function LiveHero({
     onMarkAttendance(courseId, 'present', undefined, undefined, undefined, multiplier);
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const activeClassLoggedToday = status.currentCourse
     ? state.attendanceRecords.find((r) => r.courseId === status.currentCourse!.id && r.date === todayStr)
     : null;
@@ -399,6 +399,27 @@ export function LiveHero({
                       }}
                     />
                   </div>
+                </div>
+              </div>
+            ) : status.isTermEnded ? (
+              <div className="py-4 text-left">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 mb-2">
+                  🎓 REGULAR CLASSES CONCLUDED
+                </span>
+                <h2 className="text-xl sm:text-2xl font-bold" style={{ color: theme.textPrimary }}>
+                  Semester Teaching Finished ({status.classesEndDate})
+                </h2>
+                <p className="text-xs sm:text-sm mt-1.5 max-w-lg text-slate-300">
+                  All regular timetable lectures for this semester have officially wrapped up. Focus on final exam preparation, viva evaluations, and term papers!
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => onViewChange('exams')}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-all hover:scale-105"
+                    style={{ backgroundColor: theme.accent }}
+                  >
+                    Open Exam Countdown Hub →
+                  </button>
                 </div>
               </div>
             ) : state.courses.length === 0 ? (

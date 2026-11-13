@@ -516,6 +516,8 @@ export function App() {
         courses: prev.courses.filter((c) => c.id !== courseId),
         timeSlots: prev.timeSlots.filter((s) => s.courseId !== courseId),
         tasks: prev.tasks.map((t) => (t.courseId === courseId ? { ...t, courseId: undefined } : t)),
+        exams: (prev.exams || []).filter((e) => e.courseId !== courseId),
+        attendanceRecords: (prev.attendanceRecords || []).filter((a) => a.courseId !== courseId),
       }));
     } catch (err) {
       console.error('Error deleting course in database:', err);
@@ -607,6 +609,9 @@ export function App() {
         timeSlots: [],
         tasks: [],
         attendanceRecords: [],
+        exams: [],
+        holidays: [],
+        scheduleOverrides: [],
         theme: state.theme,
         activeView: 'dashboard',
       });

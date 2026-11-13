@@ -990,13 +990,15 @@ app.post('/api/semesters/promote', requireAuth, (req, res) => {
         );
       }
 
-      // 3. Update user profile to new active semester
+      // 3. Update user profile to new active semester and reset dates
       db.prepare(`
         UPDATE users
         SET active_semester_number = ?,
-            semester = ?
+            semester = ?,
+            semester_start_date = ?,
+            classes_end_date = NULL
         WHERE id = ?
-      `).run(nextSem, `Semester ${nextSem}`, effectiveUserId);
+      `).run(nextSem, `Semester ${nextSem}`, today, effectiveUserId);
     });
 
     promoteTx();
@@ -2247,6 +2249,9 @@ app.post('/api/data/wipe', requireAuth, (req, res) => {
       db.prepare('DELETE FROM attendance_records WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM tasks WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM exams WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM academic_holidays WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM schedule_overrides WHERE user_id = ?').run(userId);
       db.prepare('DELETE FROM courses WHERE user_id = ?').run(userId);
     });
 
@@ -2308,8 +2313,11 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
         const insertCourse = db.prepare(`
           INSERT INTO courses (
             id, user_id, code, name, professor, default_room, color_hex,
-            credits, attendance_goal, total_classes_held, attended_classes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            credits, attendance_goal, total_classes_held, attended_classes,
+            baseline_classes_held, baseline_attended_classes,
+            syllabus_url, drive_folder_link, professor_email, cabin_room,
+            semester_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const c of data.courses) {
@@ -2326,7 +2334,14 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
             c.credits || 3,
             c.attendanceGoal || 75,
             c.totalClasses || 0,
-            c.attendedClasses || 0
+            c.attendedClasses || 0,
+            c.baselineClassesHeld || 0,
+            c.baselineAttendedClasses || 0,
+            c.syllabusUrl || null,
+            c.driveFolderLink || null,
+            c.professorEmail || null,
+            c.cabinRoom || null,
+            c.semesterNumber || 1
           );
         }
       }
@@ -2335,8 +2350,9 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
       if (Array.isArray(data.timeSlots)) {
         const insertSlot = db.prepare(`
           INSERT INTO time_slots (
-            id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, user_id, course_id, day_of_week, start_time, end_time, room, slot_type, notes,
+            recurrence, is_one_off, specific_date, batch, duration_multiplier, semester_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const s of data.timeSlots) {
@@ -2351,7 +2367,13 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
             s.endTime,
             s.room || null,
             s.type || 'Lecture',
-            s.notes || null
+            s.notes || null,
+            s.recurrence || 'all',
+            s.isOneOff ? 1 : 0,
+            s.specificDate || null,
+            s.batch || null,
+            s.durationMultiplier || 1,
+            s.semesterNumber || 1
           );
         }
       }
@@ -2360,8 +2382,9 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
       if (Array.isArray(data.tasks)) {
         const insertTask = db.prepare(`
           INSERT INTO tasks (
-            id, user_id, course_id, title, description, due_date, due_time, priority, status, category
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, user_id, course_id, title, description, due_date, due_time, priority, status, category,
+            submission_url, semester_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const insertSubtask = db.prepare(`
@@ -2382,7 +2405,9 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
             t.dueTime || '23:59',
             t.priority || 'medium',
             t.status || 'todo',
-            t.category || 'assignment'
+            t.category || 'assignment',
+            t.submissionUrl || null,
+            t.semesterNumber || 1
           );
 
           if (Array.isArray(t.subtasks)) {
@@ -2398,8 +2423,9 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
       // 5. Insert Attendance Records
       if (Array.isArray(data.attendanceRecords)) {
         const insertAtt = db.prepare(`
-          INSERT INTO attendance_records (id, user_id, course_id, log_date, status, note, semester_number)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO attendance_records (
+            id, user_id, course_id, log_date, status, note, document_ref, periods_count, semester_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const a of data.attendanceRecords) {
@@ -2412,6 +2438,8 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
             a.date || new Date().toISOString().split('T')[0],
             a.status || 'present',
             a.note || null,
+            a.documentRef || null,
+            a.periodsCount || 1,
             Number(a.semesterNumber) || 1
           );
         }
@@ -2450,9 +2478,9 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
         const insertEx = db.prepare(`
           INSERT INTO exams (
             id, user_id, course_id, title, exam_category, exam_type, exam_date,
-            start_time, end_time, room_or_lab, max_marks, marks_obtained,
-            syllabus_units, semester_number, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            start_time, end_time, room_or_lab, seat_number, session, max_marks, marks_obtained,
+            is_result_awaiting, syllabus_units, semester_number, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const ex of data.exams) {
@@ -2469,8 +2497,11 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
             ex.startTime || null,
             ex.endTime || null,
             ex.roomOrLab || null,
+            ex.seatNumber || null,
+            ex.session || 'morning',
             ex.maxMarks !== undefined && ex.maxMarks !== '' ? Number(ex.maxMarks) : null,
             ex.marksObtained !== undefined && ex.marksObtained !== '' ? Number(ex.marksObtained) : null,
+            ex.isResultAwaiting ? 1 : 0,
             Array.isArray(ex.syllabusUnits) ? JSON.stringify(ex.syllabusUnits) : null,
             Number(ex.semesterNumber) || 1,
             ex.notes || null
@@ -2478,7 +2509,50 @@ app.post('/api/data/restore', requireAuth, (req, res) => {
         }
       }
 
-      // 8. Update user theme preference & active semester if present
+      // 8. Insert Academic Holidays
+      if (Array.isArray(data.holidays)) {
+        db.prepare('DELETE FROM academic_holidays WHERE user_id = ?').run(userId);
+        const insertHoliday = db.prepare(`
+          INSERT INTO academic_holidays (
+            id, user_id, title, start_date, end_date, is_off_day, notes, semester_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const h of data.holidays) {
+          const hId = h.id && h.id.length > 5 ? h.id : crypto.randomUUID();
+          insertHoliday.run(
+            hId,
+            userId,
+            h.title || 'Holiday',
+            h.startDate,
+            h.endDate,
+            h.isOffDay !== false ? 1 : 0,
+            h.notes || null,
+            h.semesterNumber || 1
+          );
+        }
+      }
+
+      // 9. Insert Schedule Overrides
+      if (Array.isArray(data.scheduleOverrides)) {
+        db.prepare('DELETE FROM schedule_overrides WHERE user_id = ?').run(userId);
+        const insertOverride = db.prepare(`
+          INSERT INTO schedule_overrides (
+            id, user_id, date, run_day_schedule, reason
+          ) VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const o of data.scheduleOverrides) {
+          const oId = o.id && o.id.length > 5 ? o.id : crypto.randomUUID();
+          insertOverride.run(
+            oId,
+            userId,
+            o.date,
+            o.runDaySchedule,
+            o.reason || null
+          );
+        }
+      }
+
+      // 10. Update user theme preference & active semester if present
       if (data.theme) {
         db.prepare('UPDATE users SET theme_preference = ? WHERE id = ?').run(data.theme, userId);
       }
