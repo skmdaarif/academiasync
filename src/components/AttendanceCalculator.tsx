@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Course, StudentData, AttendanceStatus, UserAccount } from '../types';
 import { THEMES } from '../styles/themes';
 import { calculateAttendance, getRemainingClassesForCourse } from '../utils/timeUtils';
@@ -213,6 +213,34 @@ export function AttendanceCalculator({
     setBulkBaselines(updated);
   };
 
+  const analyzedCourses = useMemo(() => {
+    return state.courses.map((course) => {
+      const remainingClasses = getRemainingClassesForCourse(
+        course.id,
+        state.timeSlots,
+        new Date(),
+        user.classesEndDate,
+        state.holidays,
+        state.scheduleOverrides
+      );
+      const analysis = calculateAttendance(
+        course,
+        collegeMin,
+        personalGoal,
+        remainingClasses,
+        user.classesEndDate
+      );
+      return { course, analysis, remainingClasses };
+    });
+  }, [state.courses, state.timeSlots, user.classesEndDate, state.holidays, state.scheduleOverrides, collegeMin, personalGoal]);
+
+  const debarmentRiskCourses = analyzedCourses.filter(
+    (c) => c.analysis.severityLevel === 'debarment_risk' || c.analysis.severityLevel === 'college_warning'
+  );
+  const goalAlertCourses = analyzedCourses.filter(
+    (c) => c.analysis.isCollegeSafe && (c.analysis.severityLevel === 'goal_unreachable' || c.analysis.severityLevel === 'goal_warning')
+  );
+
   return (
     <div className="space-y-6">
       
@@ -385,6 +413,45 @@ export function AttendanceCalculator({
 
         </div>
       </div>
+
+      {/* Overview Critical & Goal Alert Banners */}
+      {(debarmentRiskCourses.length > 0 || goalAlertCourses.length > 0) && (
+        <div className="space-y-3">
+          {debarmentRiskCourses.length > 0 && (
+            <div className="p-4 rounded-2xl bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-3 shadow-lg shadow-rose-950/20 animate-in fade-in duration-300">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold text-rose-100 flex items-center gap-2">
+                  <span>Debarment Warning / College Shortage</span>
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] uppercase font-mono">
+                    {debarmentRiskCourses.length} {debarmentRiskCourses.length === 1 ? 'Course' : 'Courses'}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  Attendance in <strong className="text-rose-300 font-mono">{debarmentRiskCourses.map((c) => c.course.code).join(', ')}</strong> is below your institution's {collegeMin}% minimum requirement. Immediate class attendance or OD/Medical documentation is required to avoid debarment.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {goalAlertCourses.length > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-3 shadow-lg shadow-amber-950/10 animate-in fade-in duration-300">
+              <Target className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold text-amber-100 flex items-center gap-2">
+                  <span>Personal Goal Advisory</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] uppercase font-mono">
+                    {goalAlertCourses.length} {goalAlertCourses.length === 1 ? 'Course' : 'Courses'}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  You are safe from college debarment (≥ {collegeMin}%), but <strong className="text-amber-300 font-mono">{goalAlertCourses.map((c) => c.course.code).join(', ')}</strong> {goalAlertCourses.length === 1 ? 'is' : 'are'} trailing your personal {personalGoal}% target. Check remaining lecture trajectories below to get back on track.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Header and History Action bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
@@ -600,16 +667,50 @@ export function AttendanceCalculator({
                 </div>
 
                 {/* Bunk status badge */}
-                <div className="mt-3 space-y-1.5">
+                <div className="mt-3 space-y-2">
                   <div className={`p-2 rounded-xl text-xs font-semibold border text-center ${analysis.badgeColor}`}>
                     {analysis.statusText}
                   </div>
-                  {analysis.projectionSummary && (
+                  {(analysis.collegeProjectionSummary || analysis.goalProjectionSummary) ? (
+                    <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/5 text-[11px] space-y-1.5 leading-snug">
+                      <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400">
+                        <span className="flex items-center gap-1 text-indigo-300">
+                          <Calendar className="w-3 h-3" />
+                          Term-End Forecast
+                        </span>
+                        <span className="font-mono text-slate-400">
+                          {analysis.remainingClasses} classes left
+                        </span>
+                      </div>
+                      {analysis.collegeProjectionSummary && (
+                        <div className={`p-1.5 rounded-lg border text-[11px] ${
+                          analysis.isDebarmentInevitable 
+                            ? 'bg-rose-950/40 border-rose-500/30 text-rose-300 font-semibold' 
+                            : !analysis.isCollegeSafe
+                            ? 'bg-amber-950/40 border-amber-500/30 text-amber-300'
+                            : 'bg-emerald-950/20 border-emerald-500/20 text-emerald-300'
+                        }`}>
+                          {analysis.collegeProjectionSummary}
+                        </div>
+                      )}
+                      {analysis.goalProjectionSummary && (
+                        <div className={`p-1.5 rounded-lg border text-[11px] ${
+                          analysis.isPersonalGoalUnreachable
+                            ? 'bg-amber-950/40 border-amber-500/30 text-amber-200'
+                            : !analysis.isPersonalGoalMet
+                            ? 'bg-amber-950/30 border-amber-500/20 text-amber-300'
+                            : 'bg-indigo-950/30 border-indigo-500/20 text-indigo-300'
+                        }`}>
+                          {analysis.goalProjectionSummary}
+                        </div>
+                      )}
+                    </div>
+                  ) : analysis.projectionSummary ? (
                     <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/5 text-[11px] text-slate-300 leading-snug">
                       <span className="font-semibold text-indigo-300">📅 Term-End Projection: </span>
                       {analysis.projectionSummary}
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Interactive What-If Bunk Simulator */}

@@ -268,6 +268,8 @@ export function getCurrentAndNextClass(
   };
 }
 
+export type AttendanceSeverity = 'debarment_risk' | 'college_warning' | 'goal_unreachable' | 'goal_warning' | 'optimal';
+
 export interface AttendanceAnalysis {
   percentage: number;
   isCollegeSafe: boolean;
@@ -282,7 +284,12 @@ export interface AttendanceAnalysis {
   termCollegeSafeBunks?: number;
   termPersonalSafeBunks?: number;
   isDebarmentInevitable?: boolean;
+  isPersonalGoalUnreachable?: boolean;
+  maxPossiblePercentage?: number;
+  severityLevel: AttendanceSeverity;
   projectionSummary?: string;
+  collegeProjectionSummary?: string;
+  goalProjectionSummary?: string;
 }
 
 /**
@@ -367,6 +374,10 @@ export function calculateAttendance(
       remainingClasses: remainingClasses || 0,
       termCollegeSafeBunks: remainingClasses || 0,
       termPersonalSafeBunks: remainingClasses || 0,
+      isDebarmentInevitable: false,
+      isPersonalGoalUnreachable: false,
+      maxPossiblePercentage: 100,
+      severityLevel: 'optimal',
     };
   }
 
@@ -405,10 +416,17 @@ export function calculateAttendance(
   let termCollegeSafeBunks: number | undefined = undefined;
   let termPersonalSafeBunks: number | undefined = undefined;
   let isDebarmentInevitable = false;
+  let isPersonalGoalUnreachable = false;
+  let maxPossiblePercentage: number | undefined = undefined;
+  let collegeProjectionSummary: string | undefined = undefined;
+  let goalProjectionSummary: string | undefined = undefined;
   let projectionSummary: string | undefined = undefined;
 
   if (hasRemaining) {
     const finalTotal = total + remainingClasses!;
+    const maxPossibleAttended = attended + remainingClasses!;
+    maxPossiblePercentage = Math.round((maxPossibleAttended / finalTotal) * 1000) / 10;
+
     // Max missable out of remaining classes such that (attended + remaining - missable) / finalTotal >= collegeTarget
     const rawCollegeMissable = Math.floor(attended + remainingClasses! - finalTotal * collegeTarget);
     termCollegeSafeBunks = Math.max(0, Math.min(remainingClasses!, rawCollegeMissable));
@@ -420,37 +438,68 @@ export function calculateAttendance(
     if (!isCollegeSafe && classesNeededForCollege > remainingClasses!) {
       isDebarmentInevitable = true;
     }
-
-    if (isDebarmentInevitable) {
-      projectionSummary = `🚨 Critical: ${classesNeededForCollege} classes needed, but only ${remainingClasses} remaining before teaching ends (${classesEndDate || 'term end'}). OD / Medical duty required!`;
-    } else if (isCollegeSafe) {
-      projectionSummary = `${remainingClasses} lectures remain until ${classesEndDate || 'teaching ends'}. You can miss up to ${termCollegeSafeBunks} to finish above ${collegeMinRequirement}%.`;
-    } else {
-      projectionSummary = `${remainingClasses} lectures remain until ${classesEndDate || 'teaching ends'}. Must attend at least ${classesNeededForCollege} of them to reach ${collegeMinRequirement}%.`;
+    // Check if even attending 100% of remaining classes fails college minimum
+    if ((maxPossibleAttended / finalTotal) < collegeTarget) {
+      isDebarmentInevitable = true;
     }
+
+    // Personal Goal Feasibility Check:
+    if (classesNeededForPersonalGoal > remainingClasses! || (maxPossibleAttended / finalTotal) < personalTarget) {
+      isPersonalGoalUnreachable = true;
+    }
+
+    // College Projection Summary (Tier 1: Debarment / Institutional Threshold)
+    if (isDebarmentInevitable) {
+      collegeProjectionSummary = `🚨 Debarment Risk: Need ${classesNeededForCollege} classes, but only ${remainingClasses} remain before teaching ends (${classesEndDate || 'term end'}). OD / Medical duty required!`;
+    } else if (isCollegeSafe) {
+      collegeProjectionSummary = `🛡️ College Safe: ${remainingClasses} lectures remain until ${classesEndDate || 'teaching ends'}. You can miss up to ${termCollegeSafeBunks} to stay above ${collegeMinRequirement}%.`;
+    } else {
+      collegeProjectionSummary = `⚠️ College Shortage: ${remainingClasses} lectures remain until ${classesEndDate || 'teaching ends'}. Must attend at least ${classesNeededForCollege} of them to reach ${collegeMinRequirement}%.`;
+    }
+
+    // Goal Projection Summary (Tier 2: Personal Goal Trajectory - less severe advisory)
+    if (isPersonalGoalUnreachable) {
+      goalProjectionSummary = `🎯 Goal Advisory: Max achievable is ${maxPossiblePercentage}% (target: ${effectivePersonalGoal}%) before ${classesEndDate || 'teaching ends'}.`;
+    } else if (!isPersonalGoalMet) {
+      goalProjectionSummary = `🎯 Goal Target: Must attend at least ${classesNeededForPersonalGoal} of ${remainingClasses} remaining classes to finish above ${effectivePersonalGoal}%.`;
+    } else {
+      goalProjectionSummary = `🎯 Goal Buffer: Can miss up to ${termPersonalSafeBunks} classes while keeping final attendance above ${effectivePersonalGoal}%.`;
+    }
+
+    projectionSummary = `${collegeProjectionSummary} ${goalProjectionSummary}`;
   }
 
+  // Determine Severity Level, Badge Color, and Primary Status Text
+  let severityLevel: AttendanceSeverity = 'optimal';
   let statusText = '';
   let badgeColor = '';
 
   if (isDebarmentInevitable) {
+    severityLevel = 'debarment_risk';
     statusText = `Debarment Risk! Need ${classesNeededForCollege} classes, only ${remainingClasses} remaining before ${classesEndDate || 'term end'}`;
-    badgeColor = 'text-rose-400 bg-rose-950/60 border-rose-500/50 shadow-rose-900/20';
-  } else if (isPersonalGoalMet) {
-    statusText = personalGoalSafeBunks > 0
-      ? `On Track! You can miss ${personalGoalSafeBunks} class${personalGoalSafeBunks > 1 ? 'es' : ''} to stay above ${effectivePersonalGoal}%`
-      : `Meeting your ${effectivePersonalGoal}% goal! Attend next class`;
-    badgeColor = 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30';
-  } else if (isCollegeSafe) {
-    statusText = classesNeededForPersonalGoal >= 999
-      ? `Above College Min (${collegeMinRequirement}%), but 100% goal is mathematically impossible once a class is missed`
-      : `Above College Min (${collegeMinRequirement}%), but need ${classesNeededForPersonalGoal} class${classesNeededForPersonalGoal > 1 ? 'es' : ''} to reach ${effectivePersonalGoal}% goal`;
-    badgeColor = 'text-amber-400 bg-amber-950/40 border-amber-500/30';
-  } else {
+    badgeColor = 'text-rose-300 bg-rose-950/60 border-rose-500/50 shadow-rose-900/20';
+  } else if (!isCollegeSafe) {
+    severityLevel = 'college_warning';
     statusText = classesNeededForCollege >= 999
       ? `College Warning! Cannot reach 100% minimum requirement after missing classes`
       : `College Warning! Must attend next ${classesNeededForCollege} class${classesNeededForCollege > 1 ? 'es' : ''} to hit ${collegeMinRequirement}% minimum`;
     badgeColor = 'text-rose-400 bg-rose-950/40 border-rose-500/30';
+  } else if (isPersonalGoalUnreachable) {
+    severityLevel = 'goal_unreachable';
+    statusText = `Goal Alert: Max reachable is ${maxPossiblePercentage}% (target: ${effectivePersonalGoal}%) before ${classesEndDate || 'term end'}`;
+    badgeColor = 'text-amber-300 bg-amber-950/50 border-amber-500/40';
+  } else if (!isPersonalGoalMet) {
+    severityLevel = 'goal_warning';
+    statusText = classesNeededForPersonalGoal >= 999
+      ? `Above College Min (${collegeMinRequirement}%), but 100% goal is mathematically impossible once a class is missed`
+      : `Above College Min (${collegeMinRequirement}%), but need ${classesNeededForPersonalGoal} class${classesNeededForPersonalGoal > 1 ? 'es' : ''} to reach ${effectivePersonalGoal}% goal`;
+    badgeColor = 'text-amber-400 bg-amber-950/30 border-amber-500/20';
+  } else {
+    severityLevel = 'optimal';
+    statusText = personalGoalSafeBunks > 0
+      ? `On Track! You can miss ${personalGoalSafeBunks} class${personalGoalSafeBunks > 1 ? 'es' : ''} to stay above ${effectivePersonalGoal}%`
+      : `Meeting your ${effectivePersonalGoal}% goal! Attend next class`;
+    badgeColor = 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30';
   }
 
   return {
@@ -467,7 +516,12 @@ export function calculateAttendance(
     termCollegeSafeBunks,
     termPersonalSafeBunks,
     isDebarmentInevitable,
+    isPersonalGoalUnreachable,
+    maxPossiblePercentage,
+    severityLevel,
     projectionSummary,
+    collegeProjectionSummary,
+    goalProjectionSummary,
   };
 }
 
