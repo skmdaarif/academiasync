@@ -306,5 +306,5 @@ npm run desktop:build
 Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for details.
 
 <p align="center">
-  Crafted with ❤️ for students worldwide.
+  Crafted for students worldwide.
 </p>
