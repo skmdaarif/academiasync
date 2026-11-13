@@ -60,7 +60,7 @@ import { AcademicVaultModal } from './components/AcademicVaultModal';
 import { EmptyState } from './components/EmptyState';
 import { getTodayDayName } from './utils/timeUtils';
 import { AcademicSemester } from './types';
-import { History, ArrowLeft, Award, Sparkles, TrendingUp } from 'lucide-react';
+import { History, TrendingUp } from 'lucide-react';
 
 const SESSION_KEY = 'academiasync_active_user_v3';
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -110,12 +110,17 @@ export function App() {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
-      // Load data from PostgreSQL
-      apiFetchStudentData(currentUser.id)
-        .then((data) => setState(data))
-        .catch((err) => console.error('Failed to load Postgres student data:', err));
     } else {
       localStorage.removeItem(SESSION_KEY);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      // Load data from backend SQLite/Postgres
+      apiFetchStudentData(currentUser.id)
+        .then((data) => setState(data))
+        .catch((err) => console.error('Failed to load student data:', err));
     }
   }, [currentUser?.id]);
 
@@ -1207,7 +1212,7 @@ export function App() {
         style={{ borderColor: currentTheme.cardBorder, color: currentTheme.textSecondary }}
       >
         <p className="font-medium">
-          AcademiaSync • Connected to Local SQLite Database • Student: {currentUser.name} ({currentUser.collegeName})
+          AcademiaSync v2.1.0 • Connected to Local SQLite Database • Student: {currentUser.name} ({currentUser.collegeName})
         </p>
       </footer>
 

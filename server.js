@@ -281,6 +281,7 @@ app.get('/api/health', (req, res) => {
     const row = db.prepare("SELECT datetime('now') as current_time").get();
     res.json({
       status: 'ok',
+      version: '2.1.0',
       mode: 'sqlite',
       database: path.basename(dbPath),
       currentTime: row.current_time,
@@ -288,6 +289,7 @@ app.get('/api/health', (req, res) => {
   } catch (err) {
     res.json({
       status: 'fallback',
+      version: '2.1.0',
       mode: 'local',
       message: 'Running in local browser fallback storage mode.',
       error: err.message,

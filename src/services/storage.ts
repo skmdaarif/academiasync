@@ -1,4 +1,4 @@
-import { StudentData, Course, TimeSlot, Task, UserAccount, ThemeKey } from '../types';
+import { StudentData, UserAccount } from '../types';
 
 export type AppState = StudentData;
 export type UserProfile = UserAccount;

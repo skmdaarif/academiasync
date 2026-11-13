@@ -1,6 +1,7 @@
 {
   "name": "AcademiaSync - College Timetable & Academic Life Manager",
   "short_name": "AcademiaSync",
+  "version": "2.1.0",
   "description": "Modern College Timetable, Mid-Semester Sync, Safe Bunk Attendance Engine & Task Kanban",
   "start_url": "/",
   "display": "standalone",

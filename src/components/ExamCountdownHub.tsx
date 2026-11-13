@@ -24,7 +24,7 @@ import {
   Check,
   Sparkles
 } from 'lucide-react';
-import { formatTime12h } from '../utils/timeUtils';
+import { formatTime12h, getLocalDateString } from '../utils/timeUtils';
 import confetti from 'canvas-confetti';
 
 interface ExamCountdownHubProps {
@@ -52,7 +52,7 @@ function calculateTimeLeft(targetDate: string, targetTime: string = '09:00'): Ti
   const now = new Date().getTime();
   const diff = target - now;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const isToday = targetDate === todayStr;
 
   if (diff <= 0) {
@@ -97,7 +97,7 @@ export function ExamCountdownHub({
   const [formCourseId, setFormCourseId] = useState('');
   const [formCategory, setFormCategory] = useState<ExamCategory>('mtt');
   const [formType, setFormType] = useState<ExamType>('theory');
-  const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formDate, setFormDate] = useState(getLocalDateString());
   const [formStartTime, setFormStartTime] = useState('09:00');
   const [formEndTime, setFormEndTime] = useState('12:00');
   const [formRoomOrLab, setFormRoomOrLab] = useState('');
@@ -150,7 +150,7 @@ export function ExamCountdownHub({
     setFormCourseId(state.courses[0]?.id || '');
     setFormCategory('mtt');
     setFormType('theory');
-    setFormDate(new Date().toISOString().split('T')[0]);
+    setFormDate(getLocalDateString());
     setFormStartTime('09:00');
     setFormEndTime('12:00');
     setFormRoomOrLab('');

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { StudentData, AttendanceRecord, AttendanceStatus, Course } from '../types';
+import { StudentData, AttendanceStatus, Course } from '../types';
 import { THEMES } from '../styles/themes';
+import { getLocalDateString } from '../utils/timeUtils';
 import { 
   X, 
   Calendar, 
@@ -41,7 +42,7 @@ export function AttendanceHistoryModal({
 
   // Form state for backfilling past date
   const [backfillCourseId, setBackfillCourseId] = useState(state.courses[0]?.id || '');
-  const [backfillDate, setBackfillDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [backfillDate, setBackfillDate] = useState(() => getLocalDateString());
   const [backfillStatus, setBackfillStatus] = useState<AttendanceStatus>('present');
   const [backfillNote, setBackfillNote] = useState('');
   const [backfillDocRef, setBackfillDocRef] = useState('');
@@ -98,7 +99,7 @@ export function AttendanceHistoryModal({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `attendance_log_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `attendance_log_${getLocalDateString()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -313,7 +314,7 @@ export function AttendanceHistoryModal({
                   type="date"
                   value={backfillDate}
                   onChange={(e) => setBackfillDate(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={getLocalDateString()}
                   required
                   className="w-full text-xs px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none"
                 />

@@ -1,4 +1,4 @@
-import { BookOpen, Calendar, CheckSquare, Plus, Sparkles } from 'lucide-react';
+import { BookOpen, Calendar, CheckSquare, Plus } from 'lucide-react';
 import { THEMES } from '../styles/themes';
 import { ThemeKey } from '../types';
 

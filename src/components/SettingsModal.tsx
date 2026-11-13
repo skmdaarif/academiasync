@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StudentData, UserAccount, Course, MidSemCatchupData, MidSemCatchupTask, MidSemCatchupExam, TaskPriority, ExamCategory } from '../types';
 import { THEMES } from '../styles/themes';
+import { getLocalDateString } from '../utils/timeUtils';
 import { X, User, BookOpen, Trash2, Check, RotateCcw, Edit3, Database, Award, Sparkles, Plus, ClipboardList, FileText, CheckSquare, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -52,7 +53,7 @@ export function SettingsModal({
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Mid-Semester Catch-Up Drawer State
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const isPastTermStart = formData.semesterStartDate && formData.semesterStartDate < todayStr;
   const elapsedDays = isPastTermStart
     ? Math.max(0, Math.floor((new Date(todayStr).getTime() - new Date(formData.semesterStartDate!).getTime()) / (1000 * 60 * 60 * 24)))
@@ -389,7 +390,7 @@ export function SettingsModal({
                       <button
                         type="button"
                         onClick={() => {
-                          const inOneWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                          const inOneWeek = getLocalDateString(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
                           setPendingTasksList([
                             ...pendingTasksList,
                             {

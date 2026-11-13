@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AcademicHoliday, StudentData } from '../types';
 import { THEMES } from '../styles/themes';
+import { getLocalDateString } from '../utils/timeUtils';
 import { 
   Palmtree, 
   Plus, 
@@ -30,8 +31,8 @@ export function HolidayManagerModal({
   const holidays = state.holidays || [];
 
   const [title, setTitle] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(getLocalDateString());
+  const [endDate, setEndDate] = useState(getLocalDateString());
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 
@@ -65,7 +66,7 @@ export function HolidayManagerModal({
     setNotes('');
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">

@@ -9,7 +9,7 @@ import {
   UserAccount
 } from '../types';
 import { THEMES } from '../styles/themes';
-import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes, getSlotDurationMultiplier, isHolidayDate, getEffectiveDayOfWeek } from '../utils/timeUtils';
+import { DAYS_ORDER, getTodayDayName, formatTime12h, parseTimeToMinutes, getSlotDurationMultiplier, isHolidayDate, getEffectiveDayOfWeek, getLocalDateString } from '../utils/timeUtils';
 import { getStoredPreference, setStoredPreference } from '../services/platform';
 import { 
   Clock, 
@@ -86,11 +86,11 @@ export function TimetableGrid({
 
   // Schedule Override State
   const [showDaySwapModal, setShowDaySwapModal] = useState(false);
-  const [swapDate, setSwapDate] = useState(new Date().toISOString().split('T')[0]);
+  const [swapDate, setSwapDate] = useState(getLocalDateString());
   const [swapTargetDay, setSwapTargetDay] = useState<DayOfWeek>('Monday');
   const [swapReason, setSwapReason] = useState('');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const isBeforeTermStart = user?.semesterStartDate && todayStr < user.semesterStartDate;
   const daysUntilTermStart = user?.semesterStartDate
     ? Math.ceil((new Date(user.semesterStartDate).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -608,7 +608,7 @@ export function TimetableGrid({
                   <div className="flex items-center gap-2 pl-2 md:pl-0 border-t md:border-t-0 pt-3 md:pt-0 border-white/5">
                     {/* Quick Attendance */}
                     {(() => {
-                      const todayRec = state.attendanceRecords?.find((r) => r.courseId === course.id && r.date === new Date().toISOString().split('T')[0]);
+                      const todayRec = state.attendanceRecords?.find((r) => r.courseId === course.id && r.date === getLocalDateString());
                       if (!todayRec) {
                         return (
                           <>

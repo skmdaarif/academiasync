@@ -1,4 +1,5 @@
 import { UserAccount, StudentData, Course, TimeSlot, Task, AttendanceStatus, AttendanceRecord, AcademicSemester, AdmissionType, Exam, AcademicHoliday, ScheduleOverride, MidSemCatchupData } from '../types';
+import { getLocalDateString } from '../utils/timeUtils';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'academiasync_auth_token';
@@ -188,7 +189,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
     title: payload.semester || `Semester ${parsedSem}`,
     status: 'active',
     creditsEarned: 0,
-    startDate: new Date().toISOString().split('T')[0],
+    startDate: getLocalDateString(),
   });
 
   const blankData: StudentData = {
@@ -207,7 +208,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
           id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           userId: localId,
           title: t.title.trim(),
-          dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+          dueDate: t.dueDate || getLocalDateString(),
           dueTime: t.dueTime || '23:59',
           priority: 'medium',
           status: 'completed',
@@ -223,7 +224,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
           id: `t_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           userId: localId,
           title: t.title.trim(),
-          dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+          dueDate: t.dueDate || getLocalDateString(),
           dueTime: t.dueTime || '23:59',
           priority: t.priority || 'medium',
           status: t.status || 'todo',
@@ -244,7 +245,7 @@ export async function apiRegister(payload: RegisterPayload): Promise<{ success: 
           title: e.title.trim(),
           examCategory: e.examCategory || 'mtt',
           examType: e.examType || 'theory',
-          examDate: e.examDate || new Date().toISOString().split('T')[0],
+          examDate: e.examDate || getLocalDateString(),
           maxMarks: e.maxMarks,
           marksObtained: !isAwaiting ? e.marksObtained : undefined,
           isResultAwaiting: isAwaiting,
@@ -468,7 +469,7 @@ export async function apiAddTask(task: Omit<Task, 'id' | 'createdAt'>): Promise<
   const newTask: Task = {
     ...task,
     id: `t_${Date.now()}`,
-    createdAt: new Date().toISOString().split('T')[0],
+    createdAt: getLocalDateString(),
     semesterNumber: task.semesterNumber || data.activeSemesterNumber || 1,
   };
   data.tasks.unshift(newTask);
@@ -730,7 +731,7 @@ export async function apiLogAttendance(
 
   const data = getLocalStudentData(userId);
   const course = data.courses.find((c) => c.id === courseId);
-  const nowStr = date || new Date().toISOString().split('T')[0];
+  const nowStr = date || getLocalDateString();
   const record: AttendanceRecord = {
     id: `att_${Date.now()}`,
     courseId,
@@ -1031,7 +1032,7 @@ export async function apiPromoteSemester(
   const currUser = userIdx !== -1 ? localUsers[userIdx] : null;
 
   const currSemNumber = currUser?.activeSemesterNumber || (nextSemesterNumber - 1);
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
 
   const semesters = localData.semesters || [];
   const activeIdx = semesters.findIndex((s) => s.semesterNumber === currSemNumber);
@@ -1141,7 +1142,7 @@ export async function apiApplyMidSemCatchup(
         userId,
         courseId: t.courseId || undefined,
         title: t.title.trim(),
-        dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+        dueDate: t.dueDate || getLocalDateString(),
         dueTime: t.dueTime || '23:59',
         priority: 'medium',
         status: 'completed',
@@ -1159,7 +1160,7 @@ export async function apiApplyMidSemCatchup(
         userId,
         courseId: t.courseId || undefined,
         title: t.title.trim(),
-        dueDate: t.dueDate || new Date().toISOString().split('T')[0],
+        dueDate: t.dueDate || getLocalDateString(),
         dueTime: t.dueTime || '23:59',
         priority: t.priority || 'medium',
         status: t.status || 'todo',
@@ -1182,7 +1183,7 @@ export async function apiApplyMidSemCatchup(
         title: e.title.trim(),
         examCategory: e.examCategory || 'mtt',
         examType: e.examType || 'theory',
-        examDate: e.examDate || new Date().toISOString().split('T')[0],
+        examDate: e.examDate || getLocalDateString(),
         maxMarks: e.maxMarks,
         marksObtained: !isAwaiting ? e.marksObtained : undefined,
         isResultAwaiting: isAwaiting,

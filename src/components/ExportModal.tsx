@@ -337,11 +337,12 @@ WHERE user_id = '${user.id}';`;
               </p>
               
               <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md cursor-pointer">
-                <Upload className="w-4 h-4" />
-                Select Backup File
+                {isRestoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {isRestoring ? 'Restoring Database...' : 'Select Backup File'}
                 <input
                   type="file"
                   accept=".json"
+                  disabled={isRestoring}
                   onChange={handleFileImport}
                   className="hidden"
                 />

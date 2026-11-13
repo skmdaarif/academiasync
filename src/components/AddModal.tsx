@@ -15,7 +15,7 @@ import {
   UserAccount
 } from '../types';
 import { THEMES } from '../styles/themes';
-import { DAYS_ORDER, checkSlotOverlap, parseTimeToMinutes } from '../utils/timeUtils';
+import { DAYS_ORDER, checkSlotOverlap, parseTimeToMinutes, getLocalDateString } from '../utils/timeUtils';
 import { X, Plus, Calendar, CheckSquare, BookOpen, Trash2, AlertCircle, Flame, Link as LinkIcon } from 'lucide-react';
 
 interface AddModalProps {
@@ -69,7 +69,7 @@ export function AddModal({
   const [slotMultiplier, setSlotMultiplier] = useState<number>(initialSlot?.durationMultiplier || 1);
   const [slotRecurrence, setSlotRecurrence] = useState<SlotRecurrence>(initialSlot?.recurrence || 'all');
   const [slotIsOneOff, setSlotIsOneOff] = useState<boolean>(initialSlot?.isOneOff || false);
-  const [slotSpecificDate, setSlotSpecificDate] = useState<string>(initialSlot?.specificDate || new Date().toISOString().split('T')[0]);
+  const [slotSpecificDate, setSlotSpecificDate] = useState<string>(initialSlot?.specificDate || getLocalDateString());
   const [slotBatch, setSlotBatch] = useState<string>(initialSlot?.batch || '');
   const [slotNotes, setSlotNotes] = useState(initialSlot?.notes || '');
   const [slotError, setSlotError] = useState<string>('');
@@ -78,7 +78,7 @@ export function AddModal({
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [taskCourseId, setTaskCourseId] = useState<string>(state.courses[0]?.id || '');
-  const [taskDueDate, setTaskDueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [taskDueDate, setTaskDueDate] = useState(getLocalDateString());
   const [taskDueTime, setTaskDueTime] = useState('23:59');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('medium');
   const [taskCategory, setTaskCategory] = useState<TaskCategory>('assignment');
@@ -90,7 +90,7 @@ export function AddModal({
   const [examCourseId, setExamCourseId] = useState(state.courses[0]?.id || '');
   const [examCategory, setExamCategory] = useState<ExamCategory>('mtt');
   const [examType, setExamType] = useState<ExamType>('theory');
-  const [examDate, setExamDate] = useState(new Date().toISOString().split('T')[0]);
+  const [examDate, setExamDate] = useState(getLocalDateString());
   const [examStartTime, setExamStartTime] = useState('09:00');
   const [examEndTime, setExamEndTime] = useState('12:00');
   const [examRoomOrLab, setExamRoomOrLab] = useState('');
@@ -113,7 +113,7 @@ export function AddModal({
   const [courseDriveLink, setCourseDriveLink] = useState('');
   const [courseProfEmail, setCourseProfEmail] = useState('');
   const [courseCabinRoom, setCourseCabinRoom] = useState('');
-  const todayDateStr = new Date().toISOString().split('T')[0];
+  const todayDateStr = getLocalDateString();
   const isTermStartedInPast = Boolean(user?.semesterStartDate && user.semesterStartDate < todayDateStr);
   const defaultInitialPct = user?.initialAttendancePct;
 
@@ -619,7 +619,7 @@ export function AddModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Linked Course
@@ -647,6 +647,18 @@ export function AddModal({
                   value={taskDueDate}
                   onChange={(e) => setTaskDueDate(e.target.value)}
                   required
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Due Time
+                </label>
+                <input
+                  type="time"
+                  value={taskDueTime}
+                  onChange={(e) => setTaskDueTime(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none"
                 />
               </div>
@@ -1198,13 +1210,13 @@ export function AddModal({
                 </div>
                 <input
                   type="checkbox"
-                  checked={examIsConducted || examDate < new Date().toISOString().split('T')[0]}
+                  checked={examIsConducted || examDate < todayDateStr}
                   onChange={(e) => setExamIsConducted(e.target.checked)}
                   className="w-4 h-4 rounded text-rose-500 focus:ring-rose-500"
                 />
               </div>
 
-              {(examIsConducted || examDate < new Date().toISOString().split('T')[0]) && (
+              {(examIsConducted || examDate < todayDateStr) && (
                 <div className="pt-2 border-t border-white/5 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-300">

@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { StudentData, Course, TimeSlot, UserAccount, DayOfWeek } from '../types';
 import { THEMES } from '../styles/themes';
 import { parseTimetablePdf, ParsedTimetableResult, ParsedTimeSlot } from '../utils/pdfTimetableParser';
-import { formatTime12h, DAYS_ORDER, getSlotDurationMultiplier } from '../utils/timeUtils';
+import { formatTime12h, DAYS_ORDER, getSlotDurationMultiplier, getLocalDateString } from '../utils/timeUtils';
 import {
   X,
   UploadCloud,
@@ -51,7 +51,7 @@ export function PdfImportModal({
   const [updateProfile, setUpdateProfile] = useState(true);
 
   // Mid-Semester Attendance Baseline per Course (Slot-frequency aware)
-  const isMidSemester = Boolean(user.semesterStartDate && user.semesterStartDate < new Date().toISOString().split('T')[0]);
+  const isMidSemester = Boolean(user.semesterStartDate && user.semesterStartDate < getLocalDateString());
   const [courseBaselines, setCourseBaselines] = useState<Record<string, { held: number; attended: number }>>({});
 
   useEffect(() => {

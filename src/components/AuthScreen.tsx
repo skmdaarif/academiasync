@@ -4,6 +4,7 @@ import { apiLogin, apiRegister, apiCheckHealth } from '../services/api';
 import { COUNTRIES_UNIVERSITIES } from '../data/universities';
 import { DEGREE_PROGRAMS, getSemestersForDegree } from '../data/degrees';
 import { getDemoStudentUser, getDemoStudentData } from '../data/demoSchedule';
+import { getLocalDateString } from '../utils/timeUtils';
 import { 
   GraduationCap, 
   Mail, 
@@ -60,9 +61,9 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const [branch, setBranch] = useState('');
   const [degreeType, setDegreeType] = useState(DEGREE_PROGRAMS[0].id);
   const [semester, setSemester] = useState('Semester 1');
-  const [semesterStartDate, setSemesterStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [semesterStartDate, setSemesterStartDate] = useState(getLocalDateString());
   const [classesEndDate, setClassesEndDate] = useState(() => {
-    return new Date(Date.now() + 15 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    return getLocalDateString(new Date(Date.now() + 15 * 7 * 24 * 60 * 60 * 1000));
   });
   const [targetAttendance, setTargetAttendance] = useState(75);
 
@@ -74,7 +75,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
   const currentSemNum = parseInt(semester.replace(/\D/g, ''), 10) || 1;
 
   // Mid-Semester Catch-Up / Calibration State (when classes started before today)
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const isPastTermStart = semesterStartDate && semesterStartDate < todayStr;
   const elapsedDays = isPastTermStart
     ? Math.max(0, Math.floor((new Date(todayStr).getTime() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24)))
@@ -720,7 +721,7 @@ export function AuthScreen({ onAuthenticated, sessionExpiredNotice }: AuthScreen
                           <button
                             type="button"
                             onClick={() => {
-                              const inOneWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                              const inOneWeek = getLocalDateString(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
                               setPendingTasksList([
                                 ...pendingTasksList,
                                 {

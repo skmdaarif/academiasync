@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { UserAccount, StudentData, Course } from '../types';
+import { UserAccount, StudentData } from '../types';
 import { THEMES } from '../styles/themes';
-import { X, Sparkles, Award, CheckCircle2, ArrowRight, ShieldCheck, FileText } from 'lucide-react';
+import { X, Sparkles, CheckCircle2, ArrowRight, ShieldCheck, FileText } from 'lucide-react';
 
 interface PromoteSemesterModalProps {
   user: UserAccount;
@@ -230,6 +230,22 @@ export function PromoteSemesterModal({
               )}
             </button>
           </div>
+
+          {onOpenPdfScanner && (
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenPdfScanner();
+                }}
+                className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Or import new semester PDF timetable first</span>
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>
